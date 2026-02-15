@@ -7,75 +7,47 @@ description: Simple daily Git upload/push and download/pull operations to sync c
 
 Simple two-operation workflow: **Download** (pull) at start, **Upload** (push) at end.
 
-## Private Repository Setup (First Time)
+## Repository Info
 
-For private repos, you need a GitHub Personal Access Token (PAT):
+- **Owner**: iceonme
+- **Repo**: cts
+- **Token**: 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
 
-1. Go to GitHub → Settings → Developer settings → Personal access tokens → Generate new token
-2. Select scope: `repo` (full control of private repositories)
-3. Copy the token
+## Setup (First Time - Already Done)
 
-### Clone Private Repo
 ```bash
-git clone https://<USERNAME>:<TOKEN>@github.com/<owner>/<repo>.git
-```
-
-### Or Update Existing Repo Remote
-```bash
-git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<owner>/<repo>.git
-```
-
-### Secure Alternative: Use Git Credential Helper
-```bash
-# Store credentials securely
-git config --global credential.helper store
-
-# Then normal clone (will prompt for username/password once)
-git clone https://github.com/<owner>/<repo>.git
-# Username: your GitHub username
-# Password: your Personal Access Token (not your GitHub password)
+# Remote URL already configured with token
+git remote set-url origin https://iceonme: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@github.com/iceonme/cts.git
 ```
 
 ## Operations
 
-### Download (Pull) - 下载
+### Download (Pull) - 下载代码
 
-When user starts working and wants to get latest code from GitHub:
+Get latest code from GitHub:
 
 ```bash
-git pull
+cd /home/iceonme/CTS && git pull
 ```
 
-Or use the helper: `scripts/git-sync.ps1 -Action download`
+### Upload (Push) - 上传代码
 
-### Upload (Push) - 上传
-
-When user finishes working and wants to save code to GitHub:
+Save local changes to GitHub:
 
 ```bash
-git add .
-git commit -m "<message>"
-git push
+cd /home/iceonme/CTS && git add . && git commit -m "update: $(date +%Y-%m-%d-%H:%M)" && git push
 ```
 
-Or use the helper: `scripts/git-sync.ps1 -Action upload -Message "描述"`
-
-## Git Aliases
-
-Recommended shortcuts:
+## Git Aliases (Optional)
 
 ```bash
-# 下载最新代码
-git config --local alias.down pull
-
-# 上传代码（自动 add + commit + push）
+# 配置别名
+git config --local alias.down "pull"
 git config --local alias.up "!git add -A && git commit -m \"update: $(date +%Y-%m-%d-%H:%M)\" && git push"
-
-# 查看状态
 git config --local alias.st "status -sb"
-```
 
-Usage:
-- `git down` - 下载最新代码
-- `git up` - 上传所有更改
-- `git st` - 查看当前状态
+# 使用
+git down   # 下载最新代码
+git up     # 上传所有更改
+git st     # 查看状态
+```
