@@ -1,32 +1,28 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Git daily sync helper script
+    Git daily sync - simple upload/download operations
 
 .DESCRIPTION
-    Helps automate daily Git sync workflow - pull at start of work, push at end.
+    Simple two-operation workflow: download (pull) at start, upload (push) at end.
 
 .PARAMETER Action
-    Action to perform: pull, push, sync (pull then push)
+    Action to perform: download (pull), upload (push)
 
 .PARAMETER Message
-    Commit message for push action (optional, defaults to timestamp)
+    Commit message for upload action (optional, defaults to timestamp)
 
 .EXAMPLE
-    .\git-sync.ps1 -Action pull
-    Pull latest changes from GitHub
+    .\git-sync.ps1 -Action download
+    Download/pull latest code from GitHub
 
 .EXAMPLE
-    .\git-sync.ps1 -Action push -Message "End of day progress"
-    Commit and push changes to GitHub
-
-.EXAMPLE
-    .\git-sync.ps1 -Action sync
-    Pull then push (sync with remote)
+    .\git-sync.ps1 -Action upload -Message "Added login feature"
+    Upload/push changes to GitHub
 #>
 param(
     [Parameter(Mandatory)]
-    [ValidateSet("pull", "push", "sync")]
+    [ValidateSet("download", "upload")]
     [string]$Action,
     
     [string]$Message = ""
@@ -52,18 +48,18 @@ if (-not $gitRoot) {
 Write-Info "Working in: $gitRoot"
 
 switch ($Action) {
-    "pull" {
-        Write-Info "Pulling latest changes from GitHub..."
+    "download" {
+        Write-Info "Downloading latest code from GitHub..."
         
         # Check for local changes
         $hasChanges = git status --porcelain
         $stashed = $false
         
         if ($hasChanges) {
-            Write-Info "Local changes detected, stashing..."
-            git stash push -m "auto-stash before pull $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+            Write-Info "Local changes detected, temporarily saving..."
+            git stash push -m "auto-stash before download $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to stash changes"
+                Write-Error "Failed to save changes"
                 exit 1
             }
             $stashed = $true
@@ -72,42 +68,46 @@ switch ($Action) {
         # Pull
         git pull
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Pull failed"
+            Write-Error "Download failed"
             exit 1
         }
         
-        # Pop stash if we stashed
+        # Restore stash if we saved
         if ($stashed) {
-            Write-Info "Restoring local changes..."
+            Write-Info "Restoring your local changes..."
             git stash pop
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to restore stashed changes. Run 'git stash list' to recover."
+                Write-Error "Failed to restore your changes. Run 'git stash list' to recover."
                 exit 1
             }
         }
         
-        Write-Success "Pull complete!"
+        Write-Success "Download complete!"
     }
     
-    "push" {
-        Write-Info "Pushing changes to GitHub..."
+    "upload" {
+        Write-Info "Uploading changes to GitHub..."
         
         # Check for changes
         $hasChanges = git status --porcelain
         if (-not $hasChanges) {
-            Write-Info "No changes to commit"
-            # Still try to push in case there are unpushed commits
-            git push
-            exit 0
+            # Check if there are unpushed commits
+            $unpushed = git log --branches --not --remotes --oneline 2>$null
+            if ($unpushed) {
+                Write-Info "No new changes, but found unpushed commits"
+            } else {
+                Write-Info "No changes to upload"
+                exit 0
+            }
         }
         
-        # Stage all
-        git add .
+        # Stage all changes
+        git add -A
         
         # Commit
-        $commitMsg = if ($Message) { $Message } else { "WIP: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
+        $commitMsg = if ($Message) { $Message } else { "Update: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
         git commit -m "$commitMsg"
-        if ($LASTEXITCODE -ne 0) {
+        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) {  # Exit 1 = nothing to commit
             Write-Error "Commit failed"
             exit 1
         }
@@ -115,55 +115,10 @@ switch ($Action) {
         # Push
         git push
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Push failed"
+            Write-Error "Upload failed"
             exit 1
         }
         
-        Write-Success "Push complete!"
-    }
-    
-    "sync" {
-        Write-Info "Syncing with GitHub (pull then push)..."
-        
-        # Pull with stash handling
-        $hasChanges = git status --porcelain
-        $stashed = $false
-        
-        if ($hasChanges) {
-            Write-Info "Local changes detected, stashing..."
-            git stash push -m "auto-stash before sync $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
-            $stashed = $true
-        }
-        
-        git pull
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Pull failed"
-            exit 1
-        }
-        
-        if ($stashed) {
-            git stash pop
-        }
-        
-        # Push if there are now changes to push
-        $hasChanges = git status --porcelain
-        $unpushed = git log --branches --not --remotes --oneline
-        
-        if ($hasChanges -or $unpushed) {
-            if ($hasChanges) {
-                git add .
-                $commitMsg = if ($Message) { $Message } else { "Sync: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
-                git commit -m "$commitMsg"
-            }
-            git push
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error "Push failed"
-                exit 1
-            }
-        } else {
-            Write-Info "Nothing to push"
-        }
-        
-        Write-Success "Sync complete!"
+        Write-Success "Upload complete!"
     }
 }

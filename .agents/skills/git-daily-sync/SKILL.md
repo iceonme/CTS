@@ -1,61 +1,52 @@
 ---
 name: git-daily-sync
-description: Daily Git synchronization workflow for keeping code in sync across multiple machines via GitHub. Use when user mentions starting work (pull/download from GitHub), ending work (push/upload to GitHub), or daily git sync operations.
+description: Simple daily Git upload/push and download/pull operations to sync code between multiple computers via GitHub. Use when user mentions uploading/pushing code to GitHub, downloading/pulling code from GitHub, start work, or end work.
 ---
 
 # Git Daily Sync
 
-Manage daily Git synchronization workflow to keep code synced across multiple computers via GitHub.
+Simple two-operation workflow: **Download** (pull) at start, **Upload** (push) at end.
 
-## Workflow
+## Operations
 
-### Start Work (Download from GitHub)
+### Download (Pull) - 下载
 
-When user starts working (e.g., "开始工作", "上班了", "pull最新代码"):
-
-1. Check git status to see if there are local changes
-2. If clean: `git pull` to get latest from GitHub
-3. If has local changes:
-   - Stash them: `git stash push -m "auto-stash before pull"`
-   - Pull: `git pull`
-   - Pop stash: `git stash pop`
-
-### End Work (Upload to GitHub)
-
-When user ends working (e.g., "结束工作", "下班了", "push到GitHub"):
-
-1. Check git status
-2. Stage all changes: `git add .`
-3. Commit with timestamp: `git commit -m "WIP: <timestamp>"` or user-provided message
-4. Push to GitHub: `git push`
-
-### Quick Sync (Pull then Push)
-
-When user wants to sync: `git pull && git push`
-
-## Common Aliases Setup
-
-If not already configured, suggest these Git aliases:
+When user starts working and wants to get latest code from GitHub:
 
 ```bash
-git config --local alias.pl pull
-git config --local alias.ps push
-git config --local alias.st status
-git config --local alias.sync "!git pull && git push"
-git config --local alias.s "status -sb"
+git pull
 ```
 
-## Scripts
+Or use the helper: `scripts/git-sync.ps1 -Action download`
 
-Use `scripts/git-sync.ps1` for automated sync operations:
+### Upload (Push) - 上传
 
-```powershell
-# Pull with auto-stash support
-.\scripts\git-sync.ps1 -Action pull
+When user finishes working and wants to save code to GitHub:
 
-# Push with auto-commit
-.\scripts\git-sync.ps1 -Action push -Message "Your message"
-
-# Sync (pull then push)
-.\scripts\git-sync.ps1 -Action sync
+```bash
+git add .
+git commit -m "<message>"
+git push
 ```
+
+Or use the helper: `scripts/git-sync.ps1 -Action upload -Message "描述"`
+
+## Git Aliases
+
+Recommended shortcuts:
+
+```bash
+# 下载最新代码
+git config --local alias.down pull
+
+# 上传代码（自动 add + commit + push）
+git config --local alias.up "!git add -A && git commit -m \"update: $(date +%Y-%m-%d-%H:%M)\" && git push"
+
+# 查看状态
+git config --local alias.st "status -sb"
+```
+
+Usage:
+- `git down` - 下载最新代码
+- `git up` - 上传所有更改
+- `git st` - 查看当前状态
