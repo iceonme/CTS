@@ -7,6 +7,35 @@ description: Simple daily Git upload/push and download/pull operations to sync c
 
 Simple two-operation workflow: **Download** (pull) at start, **Upload** (push) at end.
 
+## Private Repository Setup (First Time)
+
+For private repos, you need a GitHub Personal Access Token (PAT):
+
+1. Go to GitHub → Settings → Developer settings → Personal access tokens → Generate new token
+2. Select scope: `repo` (full control of private repositories)
+3. Copy the token
+
+### Clone Private Repo
+```bash
+git clone https://<USERNAME>:<TOKEN>@github.com/<owner>/<repo>.git
+```
+
+### Or Update Existing Repo Remote
+```bash
+git remote set-url origin https://<USERNAME>:<TOKEN>@github.com/<owner>/<repo>.git
+```
+
+### Secure Alternative: Use Git Credential Helper
+```bash
+# Store credentials securely
+git config --global credential.helper store
+
+# Then normal clone (will prompt for username/password once)
+git clone https://github.com/<owner>/<repo>.git
+# Username: your GitHub username
+# Password: your Personal Access Token (not your GitHub password)
+```
+
 ## Operations
 
 ### Download (Pull) - 下载
