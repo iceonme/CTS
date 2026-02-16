@@ -1,0 +1,450 @@
+/**
+ * CFO Agent
+ * 首席财务官 - 负责市场分析决策和整体策略
+ */
+
+import BaseAgent from "./base";
+import { getTechnicalAnalyst, type TechnicalAnalyst } from "./tech-analyst";
+import { analyzeWithCFO, analyzeMultipleWithCFO } from "@/lib/cfo/reasoning";
+import type { AgentTask, MarketSentiment, CFOPerspective, CFOAnalysis, TechnicalAnalysis } from "@/lib/types";
+
+interface CFOTask {
+  type: "single_analysis" | "market_overview" | "portfolio_review";
+  symbols?: string[];
+  symbol?: string;
+  portfolio?: { symbol: string; allocation: number }[];
+}
+
+interface CFOInsight {
+  type: "market_outlook" | "risk_assessment" | "opportunity" | "warning";
+  title: string;
+  content: string;
+  confidence: number;
+  relatedSymbols: string[];
+  timestamp: Date;
+}
+
+export class CFOAgent extends BaseAgent {
+  private techAnalyst: TechnicalAnalyst;
+  private recentAnalyses: Map<string, CFOAnalysis> = new Map();
+  private maxCacheSize = 20;
+
+  constructor() {
+    super({
+      name: "CFO",
+      role: "cfo",
+      systemPrompt: `You are the Chief Financial Officer (CFO) of CryptoPulse AI.
+Your role is to:
+1. Oversee all market analysis and make strategic decisions
+2. Evaluate both bullish and bearish perspectives using dual-reasoning
+3. Provide clear buy/sell/hold recommendations with confidence levels
+4. Assess portfolio risk and market opportunities
+5. Communicate in a professional, concise manner
+
+Always present both sides of the argument (Bull vs Bear) before giving your final verdict.
+Be data-driven and quantitative in your analysis.`,
+    });
+
+    this.techAnalyst = getTechnicalAnalyst();
+  }
+
+  // ==================== 核心分析方法 ====================
+
+  /**
+   * 分析单个币种
+   */
+  async analyzeSymbol(symbol: string): Promise<CFOAnalysis> {
+    const task = {
+      id: `cfo-task-${Date.now()}`,
+      type: "analyze_symbol",
+      data: { symbol },
+      priority: "high" as const,
+      createdAt: new Date(),
+    };
+
+    const result = await this.techAnalyst.processTask(task);
+
+    if (!result.success || !result.data) {
+      throw new Error(result.error || "Technical analysis failed");
+    }
+
+    const cfoAnalysis = analyzeWithCFO(result.data as TechnicalAnalysis);
+    this.cacheAnalysis(cfoAnalysis);
+
+    return cfoAnalysis;
+  }
+
+  /**
+   * 分析多个币种
+   */
+  async analyzeMultiple(symbols: string[]): Promise<CFOAnalysis[]> {
+    const analyses: CFOAnalysis[] = [];
+
+    for (const symbol of symbols) {
+      try {
+        const analysis = await this.analyzeSymbol(symbol);
+        analyses.push(analysis);
+      } catch (error) {
+        console.error(`[CFO] 分析 ${symbol} 失败:`, error);
+        // 返回一个带有错误状态的 mock 分析，而不是让整个流程失败
+        analyses.push(this.createErrorAnalysis(symbol, error instanceof Error ? error.message : '未知错误'));
+      }
+      // 增加延迟避免 429 限速（CoinGecko 免费版：50 req/min = 1.2s/req）
+      await this.delay(1300);
+    }
+
+    return analyses;
+  }
+
+  /**
+   * 创建错误分析占位符
+   */
+  private createErrorAnalysis(symbol: string, errorMessage: string): CFOAnalysis {
+    const now = new Date();
+    return {
+      id: `cfo-error-${Date.now()}-${symbol}`,
+      symbol,
+      timestamp: now,
+      perspectives: {
+        bull: {
+          mode: "bull",
+          confidence: 0,
+          reasoning: "数据暂时不可用",
+          keyPoints: ["无法获取市场数据，请稍后重试"],
+          riskLevel: "medium",
+        },
+        bear: {
+          mode: "bear",
+          confidence: 0,
+          reasoning: "数据暂时不可用",
+          keyPoints: [errorMessage.includes('429') ? 'API 限速，请稍后再试' : '网络连接问题'],
+          riskLevel: "medium",
+        },
+      },
+      consensus: {
+        sentiment: "neutral",
+        confidence: 0,
+        summary: errorMessage.includes('429') ? "API 请求过于频繁，请稍后重试" : "数据加载失败，请刷新页面重试",
+        action: "watch",
+      },
+      technicalData: {
+        symbol,
+        indicators: {
+          rsi: 50,
+          ma7: 0,
+          ma14: 0,
+          volatility: 0,
+          trend: "sideways",
+        },
+        signals: [],
+        timestamp: now,
+      },
+    };
+  }
+
+  /**
+   * 获取市场概览
+   */
+  async getMarketOverview(): Promise<{
+    analyses: CFOAnalysis[];
+    overallSentiment: MarketSentiment;
+    topOpportunities: string[];
+    topRisks: string[];
+    summary: string;
+  }> {
+    // 分析主要币种
+    const symbols = ["BTC", "ETH", "DOGE", "SOL"];
+    const analyses = await this.analyzeMultiple(symbols);
+
+    // 计算整体情绪
+    let bullishCount = 0;
+    let bearishCount = 0;
+    let neutralCount = 0;
+    let errorCount = 0;
+
+    const opportunities: string[] = [];
+    const risks: string[] = [];
+
+    for (const analysis of analyses) {
+      // 跳过错误分析
+      if (analysis.consensus.confidence === 0 && analysis.perspectives.bull.confidence === 0) {
+        errorCount++;
+        continue;
+      }
+
+      switch (analysis.consensus.sentiment) {
+        case "bullish":
+          bullishCount++;
+          if (analysis.consensus.confidence > 0.6) {
+            opportunities.push(analysis.symbol);
+          }
+          break;
+        case "bearish":
+          bearishCount++;
+          if (analysis.consensus.confidence > 0.6) {
+            risks.push(analysis.symbol);
+          }
+          break;
+        case "neutral":
+          neutralCount++;
+          break;
+      }
+    }
+
+    const validAnalyses = analyses.length - errorCount;
+
+    let overallSentiment: MarketSentiment;
+    let summary: string;
+
+    if (validAnalyses === 0) {
+      overallSentiment = "neutral";
+      summary = "数据加载失败，请稍后刷新页面重试。";
+    } else if (bullishCount > bearishCount && bullishCount > neutralCount) {
+      overallSentiment = "bullish";
+      summary = `市场呈现看涨势头，${bullishCount}/${validAnalyses} 个资产呈积极态势。`;
+    } else if (bearishCount > bullishCount && bearishCount > neutralCount) {
+      overallSentiment = "bearish";
+      summary = `市场承压，${bearishCount}/${validAnalyses} 个资产呈消极态势。`;
+    } else {
+      overallSentiment = "neutral";
+      summary = `市场信号混杂，${neutralCount}/${validAnalyses} 个资产呈中性态势。`;
+    }
+
+    return {
+      analyses,
+      overallSentiment,
+      topOpportunities: opportunities.slice(0, 3),
+      topRisks: risks.slice(0, 3),
+      summary,
+    };
+  }
+
+  // ==================== 生成洞察 ====================
+
+  /**
+   * 生成 CFO 洞察
+   */
+  generateInsights(analyses: CFOAnalysis[]): CFOInsight[] {
+    const insights: CFOInsight[] = [];
+
+    for (const analysis of analyses) {
+      const { symbol, consensus, perspectives } = analysis;
+
+      // 强信号洞察
+      if (consensus.confidence > 0.7) {
+        insights.push({
+          type: consensus.sentiment === "bullish" ? "opportunity" : "warning",
+          title: `${symbol} ${consensus.sentiment === "bullish" ? "Opportunity" : "Risk Alert"}`,
+          content: consensus.summary,
+          confidence: consensus.confidence,
+          relatedSymbols: [symbol],
+          timestamp: new Date(),
+        });
+      }
+
+      // 观点分歧洞察
+      const bullConf = perspectives.bull.confidence;
+      const bearConf = perspectives.bear.confidence;
+      if (Math.abs(bullConf - bearConf) < 0.2 && bullConf > 0.4 && bearConf > 0.4) {
+        insights.push({
+          type: "market_outlook",
+          title: `${symbol} at Critical Juncture`,
+          content: `Bull case (${(bullConf * 100).toFixed(0)}% confidence) vs Bear case (${(bearConf * 100).toFixed(0)}% confidence). Market direction unclear.`,
+          confidence: 0.5,
+          relatedSymbols: [symbol],
+          timestamp: new Date(),
+        });
+      }
+    }
+
+    return insights.sort((a, b) => b.confidence - a.confidence);
+  }
+
+  // ==================== 格式化输出 ====================
+
+  /**
+   * 格式化分析结果为对话回复
+   */
+  formatAnalysisForChat(analysis: CFOAnalysis): string {
+    const { symbol, consensus, perspectives, technicalData } = analysis;
+
+    // 如果是错误分析，返回简洁错误信息
+    if (analysis.consensus.confidence === 0 && analysis.perspectives.bull.confidence === 0) {
+      return `📊 **${symbol} 分析报告**\n\n${analysis.consensus.summary}`;
+    }
+
+    let response = `📊 **${symbol} 分析报告**\n\n`;
+
+    // 技术指标概览
+    response += `**技术指标：**\n`;
+    response += `- RSI: ${technicalData.indicators.rsi}\n`;
+    response += `- MA7: $${technicalData.indicators.ma7.toLocaleString()}\n`;
+    response += `- MA14: $${technicalData.indicators.ma14.toLocaleString()}\n`;
+    response += `- 趋势: ${technicalData.indicators.trend === 'up' ? '上涨' : technicalData.indicators.trend === 'down' ? '下跌' : '横盘'}\n\n`;
+
+    // Bull Case
+    response += `🐂 **看涨观点** (${(perspectives.bull.confidence * 100).toFixed(0)}% 置信度)\n`;
+    perspectives.bull.keyPoints.slice(0, 2).forEach(point => {
+      response += `- ${point}\n`;
+    });
+    response += `\n`;
+
+    // Bear Case
+    response += `🐻 **看跌观点** (${(perspectives.bear.confidence * 100).toFixed(0)}% 置信度)\n`;
+    perspectives.bear.keyPoints.slice(0, 2).forEach(point => {
+      response += `- ${point}\n`;
+    });
+    response += `\n`;
+
+    // 结论
+    const emoji = consensus.action === "buy" ? "🟢" : consensus.action === "sell" ? "🔴" : "🟡";
+    const actionText = consensus.action === "buy" ? "买入" : consensus.action === "sell" ? "卖出" : consensus.action === "watch" ? "观望" : "持有";
+    response += `${emoji} **CFO 建议: ${actionText}**\n`;
+    response += `置信度: ${(consensus.confidence * 100).toFixed(0)}% | 情绪: ${consensus.sentiment === 'bullish' ? '看涨' : consensus.sentiment === 'bearish' ? '看跌' : '中性'}\n`;
+    response += `> ${consensus.summary}`;
+
+    return response;
+  }
+
+  /**
+   * 格式化市场概览
+   */
+  formatMarketOverview(overview: {
+    analyses: CFOAnalysis[];
+    overallSentiment: MarketSentiment;
+    topOpportunities: string[];
+    topRisks: string[];
+    summary: string;
+  }): string {
+    let response = `🌍 **市场概览**\n\n`;
+
+    const sentimentText = overview.overallSentiment === 'bullish' ? '看涨' : overview.overallSentiment === 'bearish' ? '看跌' : '中性';
+    response += `**整体情绪：** ${sentimentText}\n`;
+    response += `${overview.summary}\n\n`;
+
+    if (overview.topOpportunities.length > 0) {
+      response += `🟢 **机会：** ${overview.topOpportunities.join(", ")}\n`;
+    }
+
+    if (overview.topRisks.length > 0) {
+      response += `🔴 **风险：** ${overview.topRisks.join(", ")}\n`;
+    }
+
+    response += `\n**资产摘要：**\n`;
+    for (const analysis of overview.analyses) {
+      const emoji = analysis.consensus.sentiment === "bullish" ? "🟢" : analysis.consensus.sentiment === "bearish" ? "🔴" : "⚪";
+      const actionText = analysis.consensus.action === "buy" ? "买入" : analysis.consensus.action === "sell" ? "卖出" : analysis.consensus.action === "watch" ? "观望" : "持有";
+      response += `${emoji} ${analysis.symbol}: ${actionText} (${(analysis.consensus.confidence * 100).toFixed(0)}%)\n`;
+    }
+
+    return response;
+  }
+
+  // ==================== 缓存管理 ====================
+
+  private cacheAnalysis(analysis: CFOAnalysis): void {
+    this.recentAnalyses.set(analysis.symbol, analysis);
+
+    // 保持缓存大小限制
+    if (this.recentAnalyses.size > this.maxCacheSize) {
+      const firstKey = this.recentAnalyses.keys().next().value;
+      if (firstKey) {
+        this.recentAnalyses.delete(firstKey);
+      }
+    }
+  }
+
+  getCachedAnalysis(symbol: string): CFOAnalysis | undefined {
+    return this.recentAnalyses.get(symbol);
+  }
+
+  getAllCachedAnalyses(): CFOAnalysis[] {
+    return Array.from(this.recentAnalyses.values());
+  }
+
+  // ==================== 实现抽象方法 ====================
+
+  async executeTask<T>(task: AgentTask): Promise<T> {
+    const data = task.data as CFOTask;
+
+    switch (data.type) {
+      case "single_analysis": {
+        if (!data.symbol) throw new Error("Symbol required for single analysis");
+        const result = await this.analyzeSymbol(data.symbol);
+        return result as T;
+      }
+
+      case "market_overview": {
+        const result = await this.getMarketOverview();
+        return result as T;
+      }
+
+      case "portfolio_review": {
+        const symbols = data.portfolio?.map(p => p.symbol) || ["BTC", "ETH"];
+        const result = await this.analyzeMultiple(symbols);
+        return result as T;
+      }
+
+      default:
+        throw new Error(`Unknown CFO task type: ${data.type}`);
+    }
+  }
+
+  protected async generateResponse(
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<string> {
+    const lowerMsg = message.toLowerCase();
+
+    // 市场概览请求
+    if (lowerMsg.includes("overview") || lowerMsg.includes("market") || lowerMsg.includes("概览") || lowerMsg.includes("市场")) {
+      try {
+        const overview = await this.getMarketOverview();
+        return this.formatMarketOverview(overview);
+      } catch (error) {
+        return "获取市场概览时遇到问题，请稍后再试。";
+      }
+    }
+
+    // 特定币种分析
+    const symbolMatch = message.match(/\b(BTC|DOGE|ETH|SOL|XRP|ADA|AVAX|DOT)\b/i);
+    if (symbolMatch) {
+      const symbol = symbolMatch[0].toUpperCase();
+      try {
+        // 先检查缓存
+        const cached = this.getCachedAnalysis(symbol);
+        if (cached && Date.now() - cached.timestamp.getTime() < 5 * 60 * 1000) {
+          return this.formatAnalysisForChat(cached) + "\n\n*(缓存数据)*";
+        }
+
+        const analysis = await this.analyzeSymbol(symbol);
+        return this.formatAnalysisForChat(analysis);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : '';
+        if (errorMsg.includes('429')) {
+          return `⏳ API 请求过于频繁，请等待 1-2 分钟后再试。`;
+        }
+        return `暂时无法分析 ${symbol}，市场数据可能暂时不可用。`;
+      }
+    }
+
+    // 默认回复
+    return `我是你的 CFO 智能助手，可以帮你：\n\n` +
+      `📊 **市场分析** - 询问 BTC、DOGE、ETH 等币种\n` +
+      `🌍 **市场概览** - 输入"市场概览"查看整体市场状况\n` +
+      `💡 **投资建议** - 提供买入/卖出/持有建议\n\n` +
+      `你想分析什么？`;
+  }
+}
+
+// 单例模式导出
+let cfoInstance: CFOAgent | null = null;
+
+export function getCFOAgent(): CFOAgent {
+  if (!cfoInstance) {
+    cfoInstance = new CFOAgent();
+  }
+  return cfoInstance;
+}
+
+export default CFOAgent;
