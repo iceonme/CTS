@@ -19,6 +19,22 @@ interface Message {
   };
 }
 
+// 客户端时间显示组件 - 避免 Hydration 错误
+function TimeDisplay({ date }: { date: Date }) {
+  const [timeStr, setTimeStr] = useState<string>("");
+
+  useEffect(() => {
+    // 只在客户端格式化时间
+    setTimeStr(date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }));
+  }, [date]);
+
+  return <>{timeStr}</>;
+}
+
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -94,14 +110,13 @@ export default function ChatInterface() {
   const processCommand = async (command: string): Promise<{ content: string; metadata?: any }> => {
     const lowerCmd = command.toLowerCase();
     const cfo = getCFOAgent();
-    const portfolio = getPortfolioManager();
 
     // 交易命令
     if (lowerCmd.includes("买入") || lowerCmd.includes("buy")) {
       const match = command.match(/(买入|buy)\s*(\w+)\s*(\d*\.?\d*)/i);
       if (match) {
         const symbol = match[2].toUpperCase();
-        const amount = parseFloat(match[3]) || 100; // 默认 100 USDT
+        const amount = parseFloat(match[3]) || 100;
         return executeTrade(symbol, "buy", amount);
       }
     }
@@ -110,7 +125,7 @@ export default function ChatInterface() {
       const match = command.match(/(卖出|sell)\s*(\w+)\s*(\d*\.?\d*)/i);
       if (match) {
         const symbol = match[2].toUpperCase();
-        const amount = parseFloat(match[3]) || 0; // 0 表示全部卖出
+        const amount = parseFloat(match[3]) || 0;
         return executeTrade(symbol, "sell", amount);
       }
     }
@@ -161,10 +176,7 @@ export default function ChatInterface() {
   // 执行交易
   const executeTrade = (symbol: string, side: "buy" | "sell", amount: number): { content: string; metadata?: any } => {
     const portfolio = getPortfolioManager();
-    
-    // 简化处理：amount 是 USDT 金额，需要转换为数量
-    // 实际应该根据当前价格计算
-    const currentPrice = 50000; // 模拟价格
+    const currentPrice = 50000;
     const quantity = amount / currentPrice;
 
     const result = portfolio.executeTrade({
@@ -346,7 +358,7 @@ export default function ChatInterface() {
 
               <div className="text-right mt-1">
                 <span className="text-xs opacity-50">
-                  {msg.timestamp.toLocaleTimeString()}
+                  <TimeDisplay date={msg.timestamp} />
                 </span>
               </div>
             </div>
