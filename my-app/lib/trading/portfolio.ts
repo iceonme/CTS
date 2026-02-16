@@ -113,7 +113,7 @@ class PortfolioManager {
           parsed.updatedAt = new Date(parsed.updatedAt);
           this.portfolio = parsed;
         } catch (error) {
-          console.error("[Portfolio] Failed to load from storage", error);
+          console.error("[Portfolio] 从存储加载失败", error);
         }
       }
     }

@@ -277,7 +277,7 @@ export class PolymarketAgent extends BaseAgent {
       case "analyze_event": {
         const events = await this.fetchActiveEvents();
         const event = events.find(e => e.id === (data as unknown as { eventId: string }).eventId);
-        if (!event) throw new Error("Event not found");
+        if (!event) throw new Error("未找到事件");
         return this.analyzeEvent(event) as T;
       }
 
@@ -287,7 +287,7 @@ export class PolymarketAgent extends BaseAgent {
       }
 
       default:
-        throw new Error(`Unknown task type: ${data.type}`);
+        throw new Error(`未知的任务类型: ${data.type}`);
     }
   }
 

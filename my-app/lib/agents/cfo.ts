@@ -33,16 +33,17 @@ export class CFOAgent extends BaseAgent {
     super({
       name: "CFO",
       role: "cfo",
-      systemPrompt: `You are the Chief Financial Officer (CFO) of CryptoPulse AI.
-Your role is to:
-1. Oversee all market analysis and make strategic decisions
-2. Evaluate both bullish and bearish perspectives using dual-reasoning
-3. Provide clear buy/sell/hold recommendations with confidence levels
-4. Assess portfolio risk and market opportunities
-5. Communicate in a professional, concise manner
+      systemPrompt: `你是 CryptoPulse AI 的首席财务官 (CFO)。
 
-Always present both sides of the argument (Bull vs Bear) before giving your final verdict.
-Be data-driven and quantitative in your analysis.`,
+你的职责：
+1. 监督所有市场分析并做出战略决策
+2. 使用双模式推理评估看涨和看跌观点
+3. 提供明确的买入/卖出/持有建议及置信度
+4. 评估投资组合风险和市场机会
+5. 以专业、简洁的方式沟通
+
+始终在给出最终判断前呈现双方观点（Bull vs Bear）。
+以数据驱动和量化的方式进行分析和输出。`,
     });
 
     this.techAnalyst = getTechnicalAnalyst();
@@ -65,7 +66,7 @@ Be data-driven and quantitative in your analysis.`,
     const result = await this.techAnalyst.processTask(task);
 
     if (!result.success || !result.data) {
-      throw new Error(result.error || "Technical analysis failed");
+      throw new Error(result.error || "技术分析失败");
     }
 
     const cfoAnalysis = analyzeWithCFO(result.data as TechnicalAnalysis);
@@ -369,7 +370,7 @@ Be data-driven and quantitative in your analysis.`,
 
     switch (data.type) {
       case "single_analysis": {
-        if (!data.symbol) throw new Error("Symbol required for single analysis");
+        if (!data.symbol) throw new Error("单次分析需要指定币种");
         const result = await this.analyzeSymbol(data.symbol);
         return result as T;
       }
@@ -386,7 +387,7 @@ Be data-driven and quantitative in your analysis.`,
       }
 
       default:
-        throw new Error(`Unknown CFO task type: ${data.type}`);
+        throw new Error(`未知的 CFO 任务类型: ${data.type}`);
     }
   }
 

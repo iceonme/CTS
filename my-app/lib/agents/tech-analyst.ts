@@ -40,14 +40,15 @@ export class TechnicalAnalyst extends BaseAgent {
     super({
       name: "TechAnalyst",
       role: "tech-analyst",
-      systemPrompt: `You are an expert Technical Analyst specializing in cryptocurrency markets.
-Your role is to:
-1. Calculate and analyze technical indicators (RSI, MA, Volatility)
-2. Identify trends, support/resistance levels
-3. Generate buy/sell/neutral signals based on technical analysis
-4. Provide clear, data-driven insights
+      systemPrompt: `你是加密货币市场的技术分析专家。
 
-Always be precise with numbers and explain your reasoning clearly.`,
+你的职责：
+1. 计算和分析技术指标（RSI、MA、波动率）
+2. 识别趋势、支撑位和阻力位
+3. 基于技术分析生成买入/卖出/中性信号
+4. 提供清晰、数据驱动的洞察
+
+始终保持数字精确，并清楚解释你的推理过程。`,
     });
   }
 
@@ -59,7 +60,7 @@ Always be precise with numbers and explain your reasoning clearly.`,
    */
   private calculateRSI(prices: number[], period: number = 14): number {
     if (prices.length < period + 1) {
-      throw new Error(`Need at least ${period + 1} price points for RSI calculation`);
+      throw new Error(`RSI 计算需要至少 ${period + 1} 个价格点`);
     }
 
     let gains = 0;
@@ -98,7 +99,7 @@ Always be precise with numbers and explain your reasoning clearly.`,
    */
   private calculateSMA(prices: number[], period: number): number {
     if (prices.length < period) {
-      throw new Error(`Need at least ${period} price points for SMA calculation`);
+      throw new Error(`SMA 计算需要至少 ${period} 个价格点`);
     }
 
     const slice = prices.slice(-period);
@@ -111,7 +112,7 @@ Always be precise with numbers and explain your reasoning clearly.`,
    */
   private calculateEMA(prices: number[], period: number): number {
     if (prices.length < period) {
-      throw new Error(`Need at least ${period} price points for EMA calculation`);
+      throw new Error(`EMA 计算需要至少 ${period} 个价格点`);
     }
 
     const multiplier = 2 / (period + 1);
@@ -283,7 +284,7 @@ Always be precise with numbers and explain your reasoning clearly.`,
   async analyzeSymbol(symbol: string, coinId?: string, days: string = "14"): Promise<TechnicalAnalysis> {
     const id = coinId || this.coinIdMap[symbol.toUpperCase()];
     if (!id) {
-      throw new Error(`Unknown symbol: ${symbol}`);
+      throw new Error(`未知币种: ${symbol}`);
     }
 
     // 获取市场图表数据
@@ -291,7 +292,7 @@ Always be precise with numbers and explain your reasoning clearly.`,
     const prices = chartData.prices.map(p => p[1]);
 
     if (prices.length < 14) {
-      throw new Error(`Insufficient data points for ${symbol}`);
+      throw new Error(`${symbol} 数据点不足`);
     }
 
     // 计算指标
@@ -400,7 +401,7 @@ Always be precise with numbers and explain your reasoning clearly.`,
       }
 
       default:
-        throw new Error(`Unknown task type: ${task.type}`);
+        throw new Error(`未知的任务类型: ${task.type}`);
     }
   }
 

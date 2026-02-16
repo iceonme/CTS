@@ -46,7 +46,7 @@ export abstract class BaseAgent {
 
   protected onStatusChange(status: AgentStatus): void {
     // 子类可重写
-    console.log(`[${this.name}] Status changed to: ${status}`);
+    console.log(`[${this.name}] 状态变更为: ${status}`);
   }
 
   // ==================== 记忆管理 ====================
@@ -131,10 +131,10 @@ export abstract class BaseAgent {
       return { success: true, data: result };
     } catch (error) {
       this.setStatus("error");
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "未知错误";
       this.addToMemory({
         role: "system",
-        content: `Task failed: ${task.type} - ${errorMessage}`,
+        content: `任务失败: ${task.type} - ${errorMessage}`,
         metadata: { taskId: task.id, error: errorMessage },
       });
 

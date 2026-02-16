@@ -32,11 +32,11 @@ export function publishToFeed(item: IntelligenceItem): void {
     try {
       callback(item);
     } catch (error) {
-      console.error("[FeedPublisher] Subscriber error:", error);
+      console.error("[FeedPublisher] 订阅者错误:", error);
     }
   });
   
-  console.log(`[FeedPublisher] Published: ${item.title}`);
+  console.log(`[FeedPublisher] 已发布: ${item.title}`);
 }
 
 /**
@@ -91,7 +91,7 @@ export function getFeedItems(
  */
 export function clearFeed(): void {
   feedStore = [];
-  console.log("[FeedPublisher] Feed cleared");
+  console.log("[FeedPublisher] Feed 已清空");
 }
 
 // ==================== Agent 定期发布任务 ====================
@@ -100,7 +100,7 @@ export function clearFeed(): void {
  * 技术分析员每5分钟发布任务
  */
 export async function runTechAnalystFeedJob(): Promise<void> {
-  console.log("[FeedJob] Running TechAnalyst feed job...");
+  console.log("[FeedJob] 正在运行技术分析员 Feed 任务...");
   
   const techAnalyst = getTechnicalAnalyst();
   
@@ -160,10 +160,10 @@ export async function runTechAnalystFeedJob(): Promise<void> {
         publishToFeed(item);
       });
       
-      console.log(`[FeedJob] TechAnalyst published ${analyses.length} items`);
+      console.log(`[FeedJob] 技术分析员已发布 ${analyses.length} 条情报`);
     }
   } catch (error) {
-    console.error("[FeedJob] TechAnalyst job failed:", error);
+    console.error("[FeedJob] 技术分析员任务失败:", error);
   }
 }
 
@@ -171,7 +171,7 @@ export async function runTechAnalystFeedJob(): Promise<void> {
  * Polymarket 专员每5分钟发布任务
  */
 export async function runPolymarketFeedJob(): Promise<void> {
-  console.log("[FeedJob] Running Polymarket feed job...");
+  console.log("[FeedJob] 正在运行 Polymarket Feed 任务...");
   
   const polymarketAgent = getPolymarketAgent();
   
@@ -182,9 +182,9 @@ export async function runPolymarketFeedJob(): Promise<void> {
       publishToFeed(item);
     });
     
-    console.log(`[FeedJob] Polymarket published ${items.length} items`);
+    console.log(`[FeedJob] Polymarket 已发布 ${items.length} 条情报`);
   } catch (error) {
-    console.error("[FeedJob] Polymarket job failed:", error);
+    console.error("[FeedJob] Polymarket 任务失败:", error);
   }
 }
 
@@ -192,7 +192,7 @@ export async function runPolymarketFeedJob(): Promise<void> {
  * CFO 每15分钟发布盯盘结果
  */
 export async function runCFOWatchJob(): Promise<void> {
-  console.log("[FeedJob] Running CFO watch job...");
+  console.log("[FeedJob] 正在运行 CFO 盯盘任务...");
   
   const cfo = getCFOAgent();
   
@@ -222,9 +222,9 @@ export async function runCFOWatchJob(): Promise<void> {
       publishToFeed(item);
     });
     
-    console.log(`[FeedJob] CFO published ${analyses.length} items`);
+    console.log(`[FeedJob] CFO 已发布 ${analyses.length} 条情报`);
   } catch (error) {
-    console.error("[FeedJob] CFO job failed:", error);
+    console.error("[FeedJob] CFO 任务失败:", error);
   }
 }
 
@@ -238,7 +238,7 @@ let cfoInterval: NodeJS.Timeout | null = null;
  * 启动所有 Feed 定时任务
  */
 export function startFeedScheduler(): void {
-  console.log("[FeedScheduler] Starting...");
+  console.log("[FeedScheduler] 正在启动...");
   
   // 立即执行一次
   runTechAnalystFeedJob();
@@ -254,7 +254,7 @@ export function startFeedScheduler(): void {
   // CFO：每15分钟
   cfoInterval = setInterval(runCFOWatchJob, 15 * 60 * 1000);
   
-  console.log("[FeedScheduler] Started - Tech: 5min, Polymarket: 5min, CFO: 15min");
+  console.log("[FeedScheduler] 已启动 - 技术分析员: 5分钟, Polymarket: 5分钟, CFO: 15分钟");
 }
 
 /**
@@ -265,7 +265,7 @@ export function stopFeedScheduler(): void {
   if (polymarketInterval) clearInterval(polymarketInterval);
   if (cfoInterval) clearInterval(cfoInterval);
   
-  console.log("[FeedScheduler] Stopped");
+  console.log("[FeedScheduler] 已停止");
 }
 
 /**

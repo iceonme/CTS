@@ -51,7 +51,7 @@ class TaskScheduler {
     });
 
     this.tasks.set(task.id, scheduledTask);
-    console.log(`[TaskScheduler] Added task ${task.id}: ${task.symbol} every ${task.interval}min`);
+    console.log(`[TaskScheduler] 已添加任务 ${task.id}: ${task.symbol} 每 ${task.interval} 分钟`);
   }
 
   /**
@@ -62,7 +62,7 @@ class TaskScheduler {
     if (task) {
       task.stop();
       this.tasks.delete(taskId);
-      console.log(`[TaskScheduler] Removed task ${taskId}`);
+      console.log(`[TaskScheduler] 已移除任务 ${taskId}`);
       return true;
     }
     return false;
@@ -74,7 +74,7 @@ class TaskScheduler {
   startAll(): void {
     this.tasks.forEach((task, id) => {
       task.start();
-      console.log(`[TaskScheduler] Started task ${id}`);
+      console.log(`[TaskScheduler] 已启动任务 ${id}`);
     });
     this.isRunning = true;
   }
@@ -85,7 +85,7 @@ class TaskScheduler {
   stopAll(): void {
     this.tasks.forEach((task, id) => {
       task.stop();
-      console.log(`[TaskScheduler] Stopped task ${id}`);
+      console.log(`[TaskScheduler] 已停止任务 ${id}`);
     });
     this.isRunning = false;
   }
@@ -109,7 +109,7 @@ class TaskScheduler {
    * 执行任务
    */
   private async executeTask(task: WatchTask): Promise<void> {
-    console.log(`[TaskScheduler] Executing task ${task.id} for ${task.symbol}`);
+    console.log(`[TaskScheduler] 正在执行任务 ${task.id} - ${task.symbol}`);
 
     const techAnalyst = getTechnicalAnalyst();
 
@@ -142,10 +142,10 @@ class TaskScheduler {
         await this.checkConditions(task, cfoAnalysis);
       }
 
-      console.log(`[TaskScheduler] Task ${task.id} completed successfully`);
+      console.log(`[TaskScheduler] 任务 ${task.id} 执行成功`);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error(`[TaskScheduler] Task ${task.id} failed:`, err.message);
+      console.error(`[TaskScheduler] 任务 ${task.id} 失败:`, err.message);
       this.callbacks.onError?.(err);
     }
   }
@@ -178,7 +178,7 @@ class TaskScheduler {
 
       if (triggered && !condition.triggered) {
         condition.triggered = true;
-        console.log(`[TaskScheduler] Condition triggered for task ${task.id}: ${condition.type}`);
+        console.log(`[TaskScheduler] 任务 ${task.id} 触发条件: ${condition.type}`);
         
         // 生成条件触发情报
         const alertItem: IntelligenceItem = {
