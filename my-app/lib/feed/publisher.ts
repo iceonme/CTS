@@ -7,6 +7,7 @@ import type { IntelligenceItem } from "@/lib/types";
 import { getTechnicalAnalyst } from "@/lib/agents/tech-analyst";
 import { getPolymarketAgent } from "@/lib/agents/polymarket-analyst";
 import { getCFOAgent } from "@/lib/agents/cfo";
+import { getPortfolioManager } from "@/lib/trading/portfolio";
 
 // 存储所有 Feed 项（实际项目中应使用数据库）
 let feedStore: IntelligenceItem[] = [];
@@ -103,6 +104,7 @@ export async function runTechAnalystFeedJob(): Promise<void> {
   console.log("[FeedJob] 正在运行技术分析员 Feed 任务...");
   
   const techAnalyst = getTechnicalAnalyst();
+  const portfolio = getPortfolioManager();
   
   try {
     // 分析 BTC 和 DOGE
@@ -115,21 +117,32 @@ export async function runTechAnalystFeedJob(): Promise<void> {
     });
     
     if (result.success && result.data) {
-      const { analyses } = result.data as { analyses: Array<{
-        symbol: string;
-        indicators: {
-          rsi: number;
-          ma7: number;
-          ma14: number;
-          trend: string;
-        };
-        signals: Array<{
-          type: string;
-          confidence: number;
-          description: string;
+      const { analyses, prices } = result.data as { 
+        analyses: Array<{
+          symbol: string;
+          indicators: {
+            rsi: number;
+            ma7: number;
+            ma14: number;
+            trend: string;
+          };
+          signals: Array<{
+            type: string;
+            confidence: number;
+            description: string;
+          }>;
+          timestamp: Date;
         }>;
-        timestamp: Date;
-      }> };
+        prices: Array<{ symbol: string; price: number }>;
+      };
+      
+      // 更新 Portfolio 中的价格
+      if (prices) {
+        prices.forEach(({ symbol, price }) => {
+          portfolio.updatePrice(symbol, price);
+        });
+        console.log(`[FeedJob] 已更新 Portfolio 价格:`, prices.map(p => `${p.symbol}: $${p.price}`).join(', '));
+      }
       
       // 为每个分析结果创建 Feed 项
       analyses.forEach(analysis => {

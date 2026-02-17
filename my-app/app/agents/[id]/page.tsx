@@ -32,6 +32,7 @@ const agentDefaults: Record<string, Omit<AgentInfo, "name" | "avatar">> = {
       { name: "标准研判", description: "基于Feed信息的快速决策流程", enabled: true },
       { name: "深度分析", description: "异常情况的深入分析流程", enabled: true },
       { name: "异常检测", description: "识别需要深度分析的情况", enabled: true },
+      { name: "交易执行", description: "自动执行买入/卖出交易", enabled: false },
     ],
     schedule: [
       { task: "综合研判", interval: "每15分钟", lastRun: "刚刚" },

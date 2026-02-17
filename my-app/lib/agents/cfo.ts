@@ -7,6 +7,7 @@ import BaseAgent from "./base";
 import { getTechnicalAnalyst, type TechnicalAnalyst } from "./tech-analyst";
 import { analyzeWithCFO, analyzeMultipleWithCFO } from "@/lib/cfo/reasoning";
 import { getFeedItems } from "@/lib/feed/publisher";
+import { getPortfolioManager } from "@/lib/trading/portfolio";
 import type { AgentTask, MarketSentiment, CFOPerspective, CFOAnalysis, TechnicalAnalysis, IntelligenceItem } from "@/lib/types";
 
 interface CFOTask {
@@ -404,6 +405,182 @@ export class CFOAgent extends BaseAgent {
       SOL: 100,
     };
     return mockPrices[symbol] || 100;
+  }
+
+  // ==================== 交易执行（简单直接）====================
+
+  // Mock 价格（实际生产环境应从 CoinGecko 获取）
+  private mockPrices: Record<string, number> = {
+    BTC: 68400,
+    DOGE: 0.10,
+    ETH: 3500,
+    SOL: 150,
+    XRP: 0.6,
+    ADA: 0.4,
+  };
+
+  /**
+   * 执行交易
+   * 直接调用 Portfolio，不做复杂风控（风控由 PA 决策时控制）
+   */
+  async executeTrade(params: {
+    symbol: string;
+    side: 'buy' | 'sell';
+    amount?: number;      // 买入金额 (USD)
+    quantity?: number;    // 卖出数量
+    reason?: string;
+  }): Promise<{
+    success: boolean;
+    trade?: {
+      id: string;
+      symbol: string;
+      side: string;
+      quantity: number;
+      price: number;
+      total: number;
+      fee: number;
+    };
+    portfolio?: {
+      totalEquity: number;
+      balance: number;
+      positions: { symbol: string; quantity: number; avgPrice: number }[];
+    };
+    error?: string;
+  }> {
+    const portfolio = getPortfolioManager();
+
+    try {
+      // 买入需要 amount，卖出需要 quantity
+      if (params.side === 'buy' && !params.amount) {
+        return { success: false, error: '买入必须提供 amount (USD)' };
+      }
+      if (params.side === 'sell' && !params.quantity) {
+        return { success: false, error: '卖出必须提供 quantity' };
+      }
+
+      // 获取当前价格计算数量
+      let quantity = params.quantity || 0;
+      const price = this.mockPrices[params.symbol.toUpperCase()] || 100;
+      
+      if (params.side === 'buy' && params.amount) {
+        quantity = params.amount / price;
+      }
+
+      // 执行交易
+      const result = portfolio.executeTrade({
+        symbol: params.symbol.toUpperCase(),
+        side: params.side,
+        type: 'market',
+        quantity,
+        price,  // 传入价格
+        notes: params.reason || `${params.side.toUpperCase()} ${params.symbol}`,
+      });
+
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+
+      // 获取更新后的 Portfolio
+      const current = portfolio.getPortfolio();
+
+      return {
+        success: true,
+        trade: result.trade ? {
+          id: result.trade.id,
+          symbol: result.trade.symbol,
+          side: result.trade.side,
+          quantity: result.trade.quantity,
+          price: result.trade.price,
+          total: result.trade.total,
+          fee: result.trade.fee,
+        } : undefined,
+        portfolio: {
+          totalEquity: current.totalEquity,
+          balance: current.balance,
+          positions: current.positions.map(p => ({
+            symbol: p.symbol,
+            quantity: p.quantity,
+            avgPrice: p.avgPrice,
+          })),
+        },
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '交易执行失败',
+      };
+    }
+  }
+
+  /**
+   * 一键分析并执行交易
+   */
+  async analyzeAndTrade(
+    symbols?: string[],
+    autoExecute: boolean = false
+  ): Promise<{
+    analyses: {
+      symbol: string;
+      action: "buy" | "sell" | "hold" | "watch";
+      confidence: number;
+      reasoning: string;
+      position: {
+        size: "small" | "medium" | "large";
+        percentage: number;
+      };
+      stopLoss?: number;
+      takeProfit?: number;
+      timeframe: string;
+    }[];
+    executions?: {
+      success: boolean;
+      trade?: {
+        id: string;
+        symbol: string;
+        side: string;
+        quantity: number;
+        price: number;
+        total: number;
+        fee: number;
+      };
+      portfolio?: {
+        totalEquity: number;
+        balance: number;
+        positions: { symbol: string; quantity: number; avgPrice: number }[];
+      };
+      error?: string;
+    }[];
+  }> {
+    // 1. 分析
+    const analyses = await this.analyzeFromFeed(symbols);
+    
+    // 2. 如果启用自动执行，执行交易
+    const executions: Awaited<ReturnType<typeof this.executeTrade>>[] = [];
+    
+    if (autoExecute) {
+      for (const rec of analyses) {
+        // 只执行 buy/sell，跳过 hold/watch
+        if (rec.action === 'buy' || rec.action === 'sell') {
+          // 根据建议仓位计算金额
+          const portfolio = getPortfolioManager();
+          const equity = portfolio.getPortfolio().totalEquity;
+          const amount = (equity * rec.position.percentage) / 100;
+
+          const result = await this.executeTrade({
+            symbol: rec.symbol,
+            side: rec.action,
+            amount: rec.action === 'buy' ? amount : undefined,
+            quantity: rec.action === 'sell' ? rec.position.percentage : undefined, // 这里简化处理
+            reason: rec.reasoning,
+          });
+          
+          executions.push(result);
+        }
+      }
+    }
+
+    return { analyses, executions };
   }
 
   /**

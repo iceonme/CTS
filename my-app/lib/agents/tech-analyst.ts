@@ -21,6 +21,7 @@ interface TechAnalysisTask {
 
 interface MultiAssetAnalysis {
   analyses: TechnicalAnalysis[];
+  prices: Array<{ symbol: string; price: number }>;
   timestamp: Date;
 }
 
@@ -330,11 +331,17 @@ export class TechnicalAnalyst extends BaseAgent {
    */
   async analyzeMultiple(symbols: string[]): Promise<MultiAssetAnalysis> {
     const analyses: TechnicalAnalysis[] = [];
+    const prices: Array<{ symbol: string; price: number }> = [];
 
     for (const symbol of symbols) {
       try {
         const analysis = await this.analyzeSymbol(symbol);
         analyses.push(analysis);
+        // 记录当前价格
+        prices.push({
+          symbol: analysis.symbol,
+          price: analysis.indicators.ma7, // 使用 MA7 作为近似当前价格
+        });
       } catch (error) {
         console.error(`[TechAnalyst] Failed to analyze ${symbol}:`, error);
       }
@@ -344,6 +351,7 @@ export class TechnicalAnalyst extends BaseAgent {
 
     return {
       analyses,
+      prices,
       timestamp: new Date(),
     };
   }

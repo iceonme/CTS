@@ -7,8 +7,10 @@
 const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
 
 // 代理配置（仅在 Node.js 环境使用）
-const PROXY_URL = process.env.HTTPS_PROXY || process.env.https_proxy || "http://127.0.0.1:10808";
-const USE_PROXY = true;
+// 如果需要代理，请设置环境变量 HTTPS_PROXY，例如：
+// HTTPS_PROXY=http://127.0.0.1:10808 npm run dev
+const PROXY_URL = process.env.HTTPS_PROXY || process.env.https_proxy || "";
+const USE_PROXY = !!PROXY_URL;
 
 export interface CoinPrice {
   id: string;

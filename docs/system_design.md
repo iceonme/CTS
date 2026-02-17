@@ -1,6 +1,17 @@
-# CryptoPulse AI: 系统架构与需求说明书
+---
+⚠️ 状态: 已演进
+⚠️ 更新日期: 2026-02-17
+⚠️ 说明: 架构已重大升级，本文档为 v1.4 历史版本供参考
+⚠️ 最新架构: 参见 docs/architecture/ADR-001-agent-framework.md
+⚠️ 关键变更: 
+⚠️   - CFO → PA (Personal Assistant)
+⚠️   - 使用 Vercel AI SDK → 自研 TradeMind Framework
+⚠️   - 新增三层记忆体系
+---
 
-> **版本**: v1.4 | **最后更新**: 2026-02-15
+# CryptoPulse AI: 系统架构与需求说明书 (v1.4 历史版本)
+
+> **版本**: v1.4 | **原始日期**: 2026-02-15 | **存档日期**: 2026-02-17
 
 ---
 

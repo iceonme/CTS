@@ -7,6 +7,7 @@
 
 import { getPortfolioManager, type TradeOrder } from "./portfolio";
 import type { PATask } from "@/lib/types/pa-task";
+import { getCommonCoinPrices, type CommonCoinSymbol } from "@/lib/data/coingecko";
 
 // 自动交易配置
 export interface AutoTradeConfig {
@@ -308,14 +309,27 @@ class AutoTrader {
   // ==================== 辅助方法 ====================
 
   private async getCurrentPrice(symbol: string): Promise<number | null> {
-    // 模拟价格，实际应从 API 获取
-    const mockPrices: Record<string, number> = {
-      BTC: 52345.67,
-      DOGE: 0.1523,
-      ETH: 2845.32,
-      SOL: 98.45,
-    };
-    return mockPrices[symbol] || null;
+    try {
+      // 使用 CoinGecko API 获取真实价格
+      const validSymbols: CommonCoinSymbol[] = ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOT', 'MATIC', 'LINK'];
+      const upperSymbol = symbol.toUpperCase() as CommonCoinSymbol;
+      
+      if (!validSymbols.includes(upperSymbol)) {
+        console.warn(`[AutoTrader] 不支持的币种: ${symbol}`);
+        return null;
+      }
+      
+      const prices = await getCommonCoinPrices([upperSymbol]);
+      if (prices && prices.length > 0) {
+        const price = prices[0].current_price;
+        console.log(`[AutoTrader] 获取 ${symbol} 真实价格: $${price}`);
+        return price;
+      }
+      return null;
+    } catch (error) {
+      console.error(`[AutoTrader] 获取 ${symbol} 价格失败:`, error);
+      return null;
+    }
   }
 
   /**

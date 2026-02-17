@@ -1,7 +1,16 @@
-# CryptoPulse AI: Phase 1 实施计划
+---
+⚠️ 状态: 部分过时
+⚠️ 更新日期: 2026-02-17
+⚠️ 说明: 本文档技术栈已更新，自研 TradeMind Agent 框架取代原有方案
+⚠️ 最新架构: 参见 docs/architecture/ADR-001-agent-framework.md
+---
+
+# CryptoPulse AI: Phase 1 实施计划 (历史参考)
 
 > **版本**: v1.0 | **对应 Phase**: Phase 1 (基础设施与单体闭环 MVP)
 > **预估工期**: 4-6 周 | **团队规模**: 1-2 人
+> 
+> **注意**: 本文档为历史版本，目录结构和部分技术方案仍有参考价值，但 AI 架构已演进为自研 TradeMind Framework
 
 ---
 
