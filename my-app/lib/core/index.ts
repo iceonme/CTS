@@ -27,3 +27,15 @@ export type {
   LLMMessage,
   LLMResponse,
 } from './types';
+
+export { feedBus, createFeed } from './feed';
+export type {
+  Feed,
+  FeedType,
+  FeedImportance,
+  FeedData,
+  TechnicalSignalData,
+  PolyMarketData,
+  MacroRegimeData,
+  RiskAlertData,
+} from './feed';
