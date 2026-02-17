@@ -39,3 +39,15 @@ export type {
   MacroRegimeData,
   RiskAlertData,
 } from './feed';
+
+export {
+  AgentFeedStorage,
+  CollectiveMemoryStorage,
+  getAgentFeedStorage,
+  getCollectiveMemoryStorage,
+  enableFeedPersistence,
+  startCleanupJob,
+} from './feed-storage';
+export type {
+  CollectiveMemoryEntry,
+} from './feed-storage';

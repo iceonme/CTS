@@ -11,6 +11,7 @@
 
 import { BaseAgent } from '@/lib/core/base-agent';
 import { feedBus, createFeed, type Feed, type FeedImportance } from '@/lib/core/feed';
+import { getCollectiveMemoryStorage, type CollectiveMemoryEntry } from '@/lib/core/feed-storage';
 import type {
   AgentConfig,
   ChatContext,
@@ -276,6 +277,14 @@ export class PA extends BaseAgent {
     const polyFeeds = feeds.filter(f => f.from === 'poly');
     const macroFeeds = feeds.filter(f => f.from === 'macro');
     const riskFeeds = feeds.filter(f => f.from === 'risk' || f.type === 'risk');
+    
+    // 查询集体记忆（获取历史相关洞察）
+    const symbol = (feeds.find(f => (f.data as any)?.symbol)?.data as any)?.symbol;
+    let collectiveInsights: CollectiveMemoryEntry[] = [];
+    if (symbol) {
+      const collective = getCollectiveMemoryStorage();
+      collectiveInsights = collective.getRelevantForDecision(symbol, 'ooda_analysis');
+    }
 
     // 检查风控否决
     const riskVeto = riskFeeds.some(f => 
@@ -315,12 +324,18 @@ export class PA extends BaseAgent {
       arr => arr.length > 0 && arr.some(f => f.importance === 'high' || f.importance === 'critical')
     ).length;
 
+    // 融入集体记忆洞察
+    const relevantLessons = collectiveInsights
+      .filter(i => i.type === 'lesson')
+      .map(i => i.content);
+    
     const synthesis = this.generateSynthesis(
       bullPoints, 
       bearPoints, 
       confluenceCount, 
       regime,
-      riskVeto
+      riskVeto,
+      relevantLessons
     );
 
     return {
@@ -374,9 +389,20 @@ export class PA extends BaseAgent {
     bearPoints: string[], 
     confluence: number,
     regime: MarketRegime,
-    riskVeto: boolean
+    riskVeto: boolean,
+    lessons: string[] = []
   ): string {
     if (riskVeto) return '风控否决，放弃本次机会';
+    
+    // 如果有相关历史教训，优先参考
+    if (lessons.length > 0) {
+      return `参考历史教训：${lessons[0]}。综合判断：${
+        confluence >= 2 
+          ? (bullPoints.length > bearPoints.length ? '多头占优，但需谨慎' : '风险大于机会')
+          : '信号不足，观望'
+      }`;
+    }
+    
     if (confluence < 2) return '信号强度不足，等待更好的入场时机';
     if (bullPoints.length > bearPoints.length) return '多头占优，趋势确立，可小仓位试探';
     if (bearPoints.length > bullPoints.length) return '空头风险大于机会，观望为主';
