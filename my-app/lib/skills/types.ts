@@ -13,6 +13,8 @@ export interface ToolParameter {
   type: string;
   description?: string;
   enum?: string[];
+  items?: ToolParameter;
+  default?: any;
   properties?: Record<string, ToolParameter>;
   required?: string[];
 }
@@ -199,7 +201,7 @@ export interface FeedItem {
 
 // Feed 发布 Skill 的特殊配置
 export interface FeedPublishConfig {
-  feedType: 'technical' | 'sentiment' | 'prediction' | 'cfo_decision';
+  feedType: 'technical' | 'sentiment' | 'prediction' | 'pa_decision' | 'cfo_decision';
   defaultImportance: FeedItem['importance'];
   templateKey: string;  // 使用哪个模板
   channels: string[];   // 发布到哪些频道

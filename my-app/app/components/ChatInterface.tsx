@@ -6,7 +6,7 @@ import { getPortfolioManager } from "@/lib/trading/portfolio";
 
 interface Message {
   id: string;
-  role: "user" | "cfo" | "system";
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
   metadata?: {
@@ -17,6 +17,12 @@ interface Message {
     bearConfidence?: number;
     action?: string;
   };
+}
+
+interface ChatInterfaceProps {
+  paName?: string;
+  paAvatar?: string;
+  paPersonality?: string;
 }
 
 // 客户端时间显示组件 - 避免 Hydration 错误
@@ -35,14 +41,18 @@ function TimeDisplay({ date }: { date: Date }) {
   return <>{timeStr}</>;
 }
 
-export default function ChatInterface() {
+export default function ChatInterface({
+  paName = "投资助手",
+  paAvatar = "🤖",
+  paPersonality = "专业简洁",
+}: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
-      role: "cfo",
-      content: `**👔 CFO 智能助手**
+      role: "assistant",
+      content: `**${paAvatar} ${paName}**
 
-您好，我是您的加密资产 CFO。我可以帮您：
+您好，我是您的${paName}。我可以帮您：
 
 📊 **市场分析** - 分析 BTC、DOGE 等币种
 🌍 **市场概览** - 查看整体市场状况  
@@ -56,6 +66,27 @@ export default function ChatInterface() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 当 paName 变化时更新欢迎消息
+  useEffect(() => {
+    setMessages([
+      {
+        id: "welcome",
+        role: "assistant",
+        content: `**${paAvatar} ${paName}**
+
+您好，我是您的${paName}。我可以帮您：
+
+📊 **市场分析** - 分析 BTC、DOGE 等币种
+🌍 **市场概览** - 查看整体市场状况  
+💰 **交易执行** - 模拟交易操作
+📈 **盈亏查询** - 查看投资组合
+
+请直接输入您想了解的内容。`,
+        timestamp: new Date(),
+      },
+    ]);
+  }, [paName, paAvatar]);
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -84,15 +115,15 @@ export default function ChatInterface() {
     try {
       const response = await processCommand(input);
       
-      const cfoMessage: Message = {
-        id: `cfo-${Date.now()}`,
-        role: "cfo",
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
         content: response.content,
         timestamp: new Date(),
         metadata: response.metadata,
       };
 
-      setMessages(prev => [...prev, cfoMessage]);
+      setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
@@ -109,7 +140,7 @@ export default function ChatInterface() {
   // 处理用户命令
   const processCommand = async (command: string): Promise<{ content: string; metadata?: any }> => {
     const lowerCmd = command.toLowerCase();
-    const cfo = getCFOAgent();
+    const agent = getCFOAgent();
 
     // 交易命令
     if (lowerCmd.includes("买入") || lowerCmd.includes("buy")) {
@@ -140,10 +171,30 @@ export default function ChatInterface() {
       return getTradeHistory();
     }
 
+    // 基于 Feed 的交易建议
+    if (lowerCmd.includes("feed") || lowerCmd.includes("情报") || lowerCmd.includes("建议") || lowerCmd.includes("交易建议")) {
+      try {
+        const recommendations = await agent.analyzeFromFeed();
+        let response = `📊 **基于最新情报的交易建议**\n\n`;
+        recommendations.forEach((rec, index) => {
+          response += agent.formatTradeRecommendation(rec);
+          if (index < recommendations.length - 1) {
+            response += "\n\n---\n\n";
+          }
+        });
+        return {
+          content: response,
+          metadata: { type: "trade_recommendation", recommendations },
+        };
+      } catch (error) {
+        return { content: "获取交易建议时出现错误，请稍后再试。" };
+      }
+    }
+
     // 市场概览
     if (lowerCmd.includes("市场") || lowerCmd.includes("market") || lowerCmd.includes("概览")) {
-      const overview = await cfo.getMarketOverview();
-      return { content: cfo.formatMarketOverview(overview) };
+      const overview = await agent.getMarketOverview();
+      return { content: agent.formatMarketOverview(overview) };
     }
 
     // 特定币种分析
@@ -151,9 +202,9 @@ export default function ChatInterface() {
     if (symbolMatch) {
       const symbol = symbolMatch[0].toUpperCase();
       try {
-        const analysis = await cfo.analyzeSymbol(symbol);
+        const analysis = await agent.analyzeSymbol(symbol);
         return {
-          content: cfo.formatAnalysisForChat(analysis),
+          content: agent.formatAnalysisForChat(analysis),
           metadata: {
             type: "analysis",
             symbol,
@@ -168,8 +219,8 @@ export default function ChatInterface() {
       }
     }
 
-    // 默认使用 CFO 聊天
-    const response = await cfo.chat(command);
+    // 默认使用 AI 聊天
+    const response = await agent.chat(command);
     return { content: response };
   };
 
@@ -184,7 +235,7 @@ export default function ChatInterface() {
       side,
       type: "market",
       quantity,
-      notes: `通过 CFO 对话执行`,
+      notes: `通过 ${paName} 执行`,
     });
 
     if (result.success && result.trade) {
@@ -264,6 +315,7 @@ export default function ChatInterface() {
   const quickActions = [
     { label: "📊 BTC分析", command: "分析 BTC" },
     { label: "🐕 DOGE分析", command: "分析 DOGE" },
+    { label: "📰 交易建议", command: "查看交易建议" },
     { label: "💰 持仓", command: "查看持仓" },
     { label: "🌍 市场概览", command: "市场概览" },
   ];
@@ -273,10 +325,10 @@ export default function ChatInterface() {
       {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
         <div className="flex items-center gap-2">
-          <span className="text-2xl">👔</span>
+          <span className="text-2xl">{paAvatar}</span>
           <div>
-            <h2 className="font-semibold text-white">CFO 智能助手</h2>
-            <p className="text-xs text-gray-400">专业简洁 · 数据驱动</p>
+            <h2 className="font-semibold text-white">{paName}</h2>
+            <p className="text-xs text-gray-400">{paPersonality} · 数据驱动</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -303,10 +355,10 @@ export default function ChatInterface() {
                   : "bg-gray-800 text-gray-100"
               }`}
             >
-              {msg.role === "cfo" && (
+              {msg.role === "assistant" && (
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm">👔</span>
-                  <span className="text-xs font-medium text-blue-400">CFO</span>
+                  <span className="text-sm">{paAvatar}</span>
+                  <span className="text-xs font-medium text-blue-400">{paName}</span>
                   {msg.metadata?.confidence && (
                     <span className="text-xs px-2 py-0.5 bg-blue-900 rounded">
                       置信度 {(msg.metadata.confidence * 100).toFixed(0)}%
@@ -369,7 +421,7 @@ export default function ChatInterface() {
           <div className="flex justify-start">
             <div className="bg-gray-800 rounded-lg p-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm">👔</span>
+                <span className="text-sm">{paAvatar}</span>
                 <div className="flex gap-1">
                   <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></span>
                   <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></span>
@@ -406,7 +458,7 @@ export default function ChatInterface() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            placeholder="输入消息，例如：分析 BTC、买入 BTC 100、查看持仓..."
+            placeholder={`输入消息，例如：分析 BTC、买入 BTC 100、查看持仓...`}
             className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
           />
           <button

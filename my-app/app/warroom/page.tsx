@@ -2,455 +2,630 @@
 
 import { useState, useEffect } from "react";
 import { getCFOAgent } from "@/lib/agents/cfo";
-import type { CFOAnalysis } from "@/lib/types";
-import { getTechnicalAnalyst } from "@/lib/agents/tech-analyst";
-import { getPolymarketAgent } from "@/lib/agents/polymarket-analyst";
-
-interface DecisionRecord {
-  id: string;
-  timestamp: Date;
-  symbol: string;
-  bullConfidence: number;
-  bearConfidence: number;
-  consensusSentiment: string;
-  action: string;
-  summary: string;
-  verified?: boolean;
-  outcome?: "correct" | "incorrect" | "neutral";
-}
+import { getPAConfigManager } from "@/lib/skills/config/manager";
+import { getFeedItems, subscribeToFeed } from "@/lib/feed/publisher";
+import { getPortfolioManager } from "@/lib/trading/portfolio";
+import { getAutoTrader, type AutoTradeExecution } from "@/lib/trading/auto-trader";
+import type { PATask } from "@/lib/types/pa-task";
+import type { IntelligenceItem } from "@/lib/types";
 
 export default function WarRoomPage() {
-  const [activeTab, setActiveTab] = useState<"live" | "history">("live");
-  const [currentAnalysis, setCurrentAnalysis] = useState<CFOAnalysis | null>(null);
-  const [decisionHistory, setDecisionHistory] = useState<DecisionRecord[]>([]);
+  const [tasks, setTasks] = useState<PATask[]>([]);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [paName, setPaName] = useState("投资助手");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [selectedSymbol, setSelectedSymbol] = useState("BTC");
 
-  // 执行实时分析
-  const runAnalysis = async () => {
-    setIsAnalyzing(true);
-    const cfo = getCFOAgent();
+  // 加载配置和初始数据
+  useEffect(() => {
+    const configManager = getPAConfigManager();
+    const config = configManager.getConfig();
+    setPaName(config.identity.name);
+
+    // 生成初始任务数据
+    generateMockTasks();
+
+    // 订阅新的 Feed，触发新任务
+    const unsubscribe = subscribeToFeed((feed) => {
+      // 当收到新的 PA 分析 Feed 时，可以创建新任务
+      if (feed.type === "pa_analysis") {
+        // 实际应用中这里会触发新的任务分析
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 生成模拟任务数据（实际应用从后端获取）
+  const generateMockTasks = () => {
+    const portfolio = getPortfolioManager().getPortfolio();
+    const positions = getPortfolioManager().getPositions();
     
-    try {
-      const analysis = await cfo.analyzeSymbol(selectedSymbol);
-      setCurrentAnalysis(analysis);
-      
-      // 添加到历史记录
-      const record: DecisionRecord = {
-        id: `decision-${Date.now()}`,
+    const mockTasks: PATask[] = [
+      {
+        id: `task-${Date.now()}`,
         timestamp: new Date(),
-        symbol: analysis.symbol,
-        bullConfidence: analysis.perspectives.bull.confidence,
-        bearConfidence: analysis.perspectives.bear.confidence,
-        consensusSentiment: analysis.consensus.sentiment,
-        action: analysis.consensus.action,
-        summary: analysis.consensus.summary,
-      };
-      
-      setDecisionHistory(prev => [record, ...prev].slice(0, 50));
-    } catch (error) {
-      console.error("分析失败:", error);
-    } finally {
-      setIsAnalyzing(false);
+        type: "scheduled",
+        status: "running",
+        feedsRead: [
+          { agent: "技术分析员", count: 2, highlights: ["BTC RSI=65 中性", "DOGE RSI=45 偏弱"] },
+          { agent: "Polymarket专员", count: 1, highlights: ["BTC ETF 情绪看涨 72%"] },
+        ],
+        anomalyCheck: {
+          checked: true,
+          anomaliesFound: 0,
+          details: [],
+        },
+        analysis: {
+          portfolioSnapshot: {
+            totalValue: portfolio.totalEquity,
+            positions: positions.map(p => ({
+              symbol: p.symbol,
+              value: p.quantity * p.currentPrice,
+              pnl: p.unrealizedPnl,
+            })),
+          },
+          marketSentiment: "neutral",
+          keyInsights: ["市场整体横盘", "BTC技术面中性", "DOGE相对弱势"],
+          risks: ["DOGE持仓亏损-5%", "市场整体波动率上升"],
+          opportunities: ["BTC若突破$53k可加仓", "DOGE超跌反弹机会"],
+        },
+        tradingInstructions: [
+          { symbol: "BTC", action: "hold", percentage: 20, confidence: 0.65, reasoning: "技术面中性，观望为主", executed: false },
+          { symbol: "DOGE", action: "reduce", percentage: 10, confidence: 0.55, reasoning: "弱势格局，减仓避险", executed: false },
+        ],
+      },
+      {
+        id: `task-${Date.now() - 15 * 60 * 1000}`,
+        timestamp: new Date(Date.now() - 15 * 60 * 1000),
+        type: "anomaly",
+        status: "completed",
+        feedsRead: [
+          { agent: "技术分析员", count: 2, highlights: ["BTC 15分钟涨3%", "突破MA7"] },
+          { agent: "Polymarket专员", count: 1, highlights: ["看涨情绪急剧上升"] },
+        ],
+        anomalyCheck: {
+          checked: true,
+          anomaliesFound: 1,
+          details: ["BTC 15分钟内涨幅超过3%"],
+        },
+        analysis: {
+          portfolioSnapshot: {
+            totalValue: 10500,
+            positions: [
+              { symbol: "BTC", value: 3000, pnl: 150 },
+              { symbol: "DOGE", value: 800, pnl: -50 },
+            ],
+          },
+          marketSentiment: "bullish",
+          keyInsights: ["BTC突破短期均线", "市场情绪转暖", "量价配合良好"],
+          risks: ["追涨风险", "可能假突破"],
+          opportunities: ["BTC momentum 延续", "若回调至$51k可加仓"],
+        },
+        tradingInstructions: [
+          { symbol: "BTC", action: "buy", percentage: 15, confidence: 0.72, reasoning: "突破信号明确，追涨10%仓位", executed: true },
+          { symbol: "DOGE", action: "hold", percentage: 10, confidence: 0.45, reasoning: "资金优先配置BTC", executed: false },
+        ],
+        execution: {
+          time: new Date(Date.now() - 14 * 60 * 1000),
+          orders: [{ symbol: "BTC", side: "buy", amount: 0.05, status: "filled" }],
+        },
+        autoTradeExecutions: [
+          {
+            id: "auto-001",
+            taskId: `task-${Date.now() - 15 * 60 * 1000}`,
+            timestamp: new Date(Date.now() - 14 * 60 * 1000),
+            instruction: {
+              symbol: "BTC",
+              action: "buy",
+              percentage: 15,
+              confidence: 0.72,
+            },
+            execution: {
+              success: true,
+              amount: 0.05,
+              price: 52345.67,
+              total: 2617.28,
+              fee: 2.62,
+            },
+            riskCheck: { passed: true },
+            config: getAutoTrader().getConfig(),
+          },
+        ],
+      },
+      {
+        id: `task-${Date.now() - 30 * 60 * 1000}`,
+        timestamp: new Date(Date.now() - 30 * 60 * 1000),
+        type: "scheduled",
+        status: "completed",
+        feedsRead: [
+          { agent: "技术分析员", count: 2, highlights: ["BTC RSI=58", "DOGE RSI=42"] },
+          { agent: "Polymarket专员", count: 1, highlights: ["市场情绪中性偏空"] },
+        ],
+        anomalyCheck: {
+          checked: true,
+          anomaliesFound: 0,
+          details: [],
+        },
+        analysis: {
+          portfolioSnapshot: {
+            totalValue: 10200,
+            positions: [
+              { symbol: "BTC", value: 2500, pnl: 50 },
+              { symbol: "DOGE", value: 800, pnl: -80 },
+            ],
+          },
+          marketSentiment: "neutral",
+          keyInsights: ["市场横盘整理", "DOGE持续弱势", "BTC相对抗跌"],
+          risks: ["DOGE可能继续下跌", "市场整体缺乏方向"],
+          opportunities: [],
+        },
+        tradingInstructions: [
+          { symbol: "BTC", action: "hold", percentage: 20, confidence: 0.55, reasoning: "观望为主", executed: false },
+          { symbol: "DOGE", action: "sell", percentage: 50, confidence: 0.60, reasoning: "弱势格局，减仓一半", executed: true },
+        ],
+        execution: {
+          time: new Date(Date.now() - 29 * 60 * 1000),
+          orders: [{ symbol: "DOGE", side: "sell", amount: 1000, status: "filled" }],
+        },
+      },
+    ];
+
+    setTasks(mockTasks);
+    setExpandedTaskId(mockTasks[0].id); // 默认展开最新任务
+  };
+
+  // 手动触发一次 Portfolio 分析
+  const runManualAnalysis = async () => {
+    setIsAnalyzing(true);
+    // 模拟分析过程
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    generateMockTasks();
+    setIsAnalyzing(false);
+  };
+
+  const getTaskTypeLabel = (type: PATask["type"]) => {
+    switch (type) {
+      case "scheduled": return { text: "定时研判", color: "bg-blue-900 text-blue-400" };
+      case "anomaly": return { text: "异常响应", color: "bg-red-900 text-red-400" };
+      case "manual": return { text: "手动触发", color: "bg-purple-900 text-purple-400" };
+      case "portfolio_review": return { text: "组合复盘", color: "bg-green-900 text-green-400" };
     }
   };
 
-  // 初始分析
-  useEffect(() => {
-    runAnalysis();
-  }, [selectedSymbol]);
+  const getStatusIcon = (status: PATask["status"]) => {
+    switch (status) {
+      case "running": return "⏳";
+      case "completed": return "✅";
+      case "failed": return "❌";
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       {/* 头部 */}
       <header className="bg-gray-900 border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-3xl">⚔️</span>
               <div>
                 <h1 className="text-xl font-bold text-white">WarRoom 作战室</h1>
-                <p className="text-sm text-gray-400">CFO 决策大脑可视化</p>
+                <p className="text-sm text-gray-400">{paName} 任务执行记录</p>
               </div>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setActiveTab("live")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === "live"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
+                onClick={runManualAnalysis}
+                disabled={isAnalyzing}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
               >
-                实时思考
+                {isAnalyzing ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    分析中...
+                  </>
+                ) : (
+                  <>
+                    <span>🔄</span>
+                    立即研判
+                  </>
+                )}
               </button>
-              <button
-                onClick={() => setActiveTab("history")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === "history"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
+              <a
+                href="/settings"
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
               >
-                历史决策
-              </button>
+                ⚙️ 配置
+              </a>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        {activeTab === "live" ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* 左侧：控制面板 */}
-            <div className="lg:col-span-1 space-y-4">
-              {/* 币种选择 */}
-              <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-                <h3 className="text-sm font-medium text-gray-400 mb-3">选择标的</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {["BTC", "DOGE"].map(symbol => (
-                    <button
-                      key={symbol}
-                      onClick={() => setSelectedSymbol(symbol)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        selectedSymbol === symbol
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                      }`}
-                    >
-                      {symbol}
-                    </button>
-                  ))}
-                </div>
-              </div>
+      {/* 任务流时间线 */}
+      <main className="max-w-5xl mx-auto px-4 py-6">
+        <div className="space-y-4">
+          {tasks.map((task, index) => {
+            const isExpanded = expandedTaskId === task.id;
+            const typeLabel = getTaskTypeLabel(task.type);
 
-              {/* 正确率统计 */}
-              <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-                <h3 className="text-sm font-medium text-gray-400 mb-3">正确率统计</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-green-400">🐂 Bull 正确率</span>
-                    <span className="font-bold text-green-400">75%</span>
-                  </div>
-                  <div className="w-full bg-gray-800 rounded-full h-2">
-                    <div className="bg-green-500 h-2 rounded-full" style={{ width: "75%" }}></div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center pt-2">
-                    <span className="text-red-400">🐻 Bear 正确率</span>
-                    <span className="font-bold text-red-400">60%</span>
-                  </div>
-                  <div className="w-full bg-gray-800 rounded-full h-2">
-                    <div className="bg-red-500 h-2 rounded-full" style={{ width: "60%" }}></div>
-                  </div>
-
-                  <div className="pt-3 border-t border-gray-800">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-400">市场判断</span>
-                      <span className="px-2 py-1 bg-green-900 text-green-400 rounded text-xs">牛市倾向</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Agent 状态 */}
-              <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-                <h3 className="text-sm font-medium text-gray-400 mb-3">MAS 成员状态</h3>
-                <div className="space-y-2">
+            return (
+              <div
+                key={task.id}
+                className={`bg-gray-900 rounded-lg border transition-all ${
+                  isExpanded ? "border-blue-600" : "border-gray-800 hover:border-gray-700"
+                }`}
+              >
+                {/* 任务头部 - 始终显示 */}
+                <div
+                  className="p-4 cursor-pointer"
+                  onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}
+                >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>👔</span>
-                      <span className="text-sm">CFO</span>
-                    </div>
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>📊</span>
-                      <span className="text-sm">技术分析员</span>
-                    </div>
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>🔮</span>
-                      <span className="text-sm">Polymarket专员</span>
-                    </div>
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 右侧：实时分析展示 */}
-            <div className="lg:col-span-2">
-              {isAnalyzing ? (
-                <div className="bg-gray-900 rounded-lg p-8 border border-gray-800 text-center">
-                  <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                  <p className="text-gray-400">CFO 正在分析 {selectedSymbol}...</p>
-                </div>
-              ) : currentAnalysis ? (
-                <div className="space-y-4">
-                  {/* 分析头部 */}
-                  <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl font-bold text-white">{currentAnalysis.symbol}</span>
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          currentAnalysis.consensus.sentiment === "bullish"
-                            ? "bg-green-900 text-green-400"
-                            : currentAnalysis.consensus.sentiment === "bearish"
-                            ? "bg-red-900 text-red-400"
-                            : "bg-gray-800 text-gray-400"
-                        }`}>
-                          {currentAnalysis.consensus.sentiment === "bullish"
-                            ? "看涨"
-                            : currentAnalysis.consensus.sentiment === "bearish"
-                            ? "看跌"
-                            : "中性"}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-400">综合置信度</div>
-                        <div className="text-xl font-bold text-blue-400">
-                          {(currentAnalysis.consensus.confidence * 100).toFixed(0)}%
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl">{getStatusIcon(task.status)}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${typeLabel.color}`}>
+                            {typeLabel.text}
+                          </span>
+                          <span className="text-sm text-gray-500">
+                            {task.timestamp.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm text-gray-400">
+                          读取 {task.feedsRead.reduce((sum, f) => sum + f.count, 0)} 条情报
+                          {task.anomalyCheck.anomaliesFound > 0 && (
+                            <span className="ml-2 text-red-400">
+                              · 发现 {task.anomalyCheck.anomaliesFound} 个异常
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Bull vs Bear 对战 */}
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Bull 阵营 */}
-                    <div className="bg-gray-900 rounded-lg p-4 border border-green-800/50">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-2xl">🐂</span>
-                        <h3 className="font-bold text-green-400">Bull 看多阵营</h3>
-                        <span className="ml-auto text-green-400 font-bold">
-                          {(currentAnalysis.perspectives.bull.confidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-800 rounded-full h-3 mb-3">
-                        <div
-                          className="bg-green-500 h-3 rounded-full transition-all duration-500"
-                          style={{ width: `${currentAnalysis.perspectives.bull.confidence * 100}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-sm text-gray-300 mb-2">
-                        {currentAnalysis.perspectives.bull.reasoning}
-                      </p>
-                      <ul className="space-y-1">
-                        {currentAnalysis.perspectives.bull.keyPoints.slice(0, 3).map((point, i) => (
-                          <li key={i} className="text-xs text-gray-400 flex items-start gap-1">
-                            <span className="text-green-500">+</span>
-                            {point}
-                          </li>
+                    {/* 交易指令概览（重点突出） */}
+                    <div className="flex items-center gap-4">
+                      <div className="flex gap-2">
+                        {task.tradingInstructions.map((inst, i) => (
+                          <div
+                            key={i}
+                            className={`px-3 py-2 rounded-lg text-center min-w-[80px] ${
+                              inst.action === "buy"
+                                ? "bg-green-900/50 border border-green-700"
+                                : inst.action === "sell" || inst.action === "reduce"
+                                ? "bg-red-900/50 border border-red-700"
+                                : "bg-gray-800 border border-gray-700"
+                            }`}
+                          >
+                            <div className={`text-sm font-bold ${
+                              inst.action === "buy"
+                                ? "text-green-400"
+                                : inst.action === "sell" || inst.action === "reduce"
+                                ? "text-red-400"
+                                : "text-yellow-400"
+                            }`}>
+                              {inst.action === "buy" && "买入"}
+                              {inst.action === "sell" && "卖出"}
+                              {inst.action === "reduce" && "减仓"}
+                              {inst.action === "hold" && "持有"}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {inst.symbol} {inst.percentage}%
+                            </div>
+                            {inst.executed && (
+                              <div className="text-xs text-green-500 mt-1">✓ 已执行</div>
+                            )}
+                          </div>
                         ))}
-                      </ul>
-                    </div>
-
-                    {/* Bear 阵营 */}
-                    <div className="bg-gray-900 rounded-lg p-4 border border-red-800/50">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-2xl">🐻</span>
-                        <h3 className="font-bold text-red-400">Bear 看空阵营</h3>
-                        <span className="ml-auto text-red-400 font-bold">
-                          {(currentAnalysis.perspectives.bear.confidence * 100).toFixed(0)}%
-                        </span>
                       </div>
-                      <div className="w-full bg-gray-800 rounded-full h-3 mb-3">
-                        <div
-                          className="bg-red-500 h-3 rounded-full transition-all duration-500"
-                          style={{ width: `${currentAnalysis.perspectives.bear.confidence * 100}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-sm text-gray-300 mb-2">
-                        {currentAnalysis.perspectives.bear.reasoning}
-                      </p>
-                      <ul className="space-y-1">
-                        {currentAnalysis.perspectives.bear.keyPoints.slice(0, 3).map((point, i) => (
-                          <li key={i} className="text-xs text-gray-400 flex items-start gap-1">
-                            <span className="text-red-500">-</span>
-                            {point}
-                          </li>
-                        ))}
-                      </ul>
+                      <span className="text-gray-500">{isExpanded ? "▼" : "▶"}</span>
                     </div>
                   </div>
+                </div>
 
-                  {/* 综合判断 */}
-                  <div className="bg-gray-900 rounded-lg p-4 border border-blue-800/50">
-                    <h3 className="font-bold text-blue-400 mb-3">🎯 CFO 综合判断</h3>
-                    <div className="bg-gray-800/50 rounded-lg p-3 mb-3">
-                      <p className="text-sm text-gray-200">{currentAnalysis.consensus.summary}</p>
+                {/* 展开详情 */}
+                {isExpanded && (
+                  <div className="border-t border-gray-800 p-4 space-y-6">
+                    {/* Step 1: 读取 Feed */}
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-full bg-blue-900 text-blue-400 flex items-center justify-center text-sm font-bold shrink-0">
+                        1
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-white mb-2">读取情报 Feed</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          {task.feedsRead.map((feed, i) => (
+                            <div key={i} className="bg-gray-800 rounded-lg p-3">
+                              <div className="text-sm text-gray-400">{feed.agent}</div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {feed.count} 条情报
+                              </div>
+                              <div className="mt-2 space-y-1">
+                                {feed.highlights.map((h, j) => (
+                                  <div key={j} className="text-xs text-blue-400">• {h}</div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <span className="text-xs text-gray-500">建议操作</span>
-                          <div className={`font-bold ${
-                            currentAnalysis.consensus.action === "buy"
-                              ? "text-green-400"
-                              : currentAnalysis.consensus.action === "sell"
-                              ? "text-red-400"
-                              : "text-yellow-400"
-                          }`}>
-                            {currentAnalysis.consensus.action === "buy"
-                              ? "买入"
-                              : currentAnalysis.consensus.action === "sell"
-                              ? "卖出"
-                              : currentAnalysis.consensus.action === "watch"
-                              ? "观望"
-                              : "持有"}
+
+                    {/* Step 2: 异常检测 */}
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-full bg-yellow-900 text-yellow-400 flex items-center justify-center text-sm font-bold shrink-0">
+                        2
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-white mb-2">异常检测</h3>
+                        {task.anomalyCheck.anomaliesFound > 0 ? (
+                          <div className="bg-red-900/30 border border-red-800 rounded-lg p-3">
+                            <div className="text-red-400 font-medium">
+                              ⚠️ 发现 {task.anomalyCheck.anomaliesFound} 个异常
+                            </div>
+                            {task.anomalyCheck.details.map((d, i) => (
+                              <div key={i} className="text-sm text-red-300 mt-1">• {d}</div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="bg-gray-800 rounded-lg p-3 text-gray-400">
+                            ✅ 未发现异常，执行标准研判流程
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 3: Portfolio 分析 */}
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-full bg-purple-900 text-purple-400 flex items-center justify-center text-sm font-bold shrink-0">
+                        3
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-white mb-2">Portfolio 综合分析</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-gray-800 rounded-lg p-3">
+                            <div className="text-sm text-gray-400">资产快照</div>
+                            <div className="text-lg font-bold text-white">
+                              ${task.analysis.portfolioSnapshot.totalValue.toLocaleString()}
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {task.analysis.portfolioSnapshot.positions.map((p, i) => (
+                                <div key={i} className="text-xs flex justify-between">
+                                  <span className="text-gray-400">{p.symbol}</span>
+                                  <span className={p.pnl >= 0 ? "text-green-400" : "text-red-400"}>
+                                    {p.pnl >= 0 ? "+" : ""}${p.pnl.toFixed(0)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="bg-gray-800 rounded-lg p-3">
+                              <div className="text-sm text-gray-400">市场情绪</div>
+                              <span className={`inline-block mt-1 px-2 py-1 rounded text-xs ${
+                                task.analysis.marketSentiment === "bullish"
+                                  ? "bg-green-900 text-green-400"
+                                  : task.analysis.marketSentiment === "bearish"
+                                  ? "bg-red-900 text-red-400"
+                                  : "bg-gray-700 text-gray-400"
+                              }`}>
+                                {task.analysis.marketSentiment === "bullish" ? "看涨" : task.analysis.marketSentiment === "bearish" ? "看跌" : "中性"}
+                              </span>
+                            </div>
+                            <div className="bg-gray-800 rounded-lg p-3">
+                              <div className="text-sm text-gray-400">关键洞察</div>
+                              {task.analysis.keyInsights.map((insight, i) => (
+                                <div key={i} className="text-xs text-gray-300 mt-1">• {insight}</div>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                        <div>
-                          <span className="text-xs text-gray-500">风险等级</span>
-                          <div className="font-bold text-gray-300">
-                            {currentAnalysis.perspectives.bull.riskLevel === "high" || 
-                             currentAnalysis.perspectives.bear.riskLevel === "high" 
-                              ? "高" 
-                              : "中"}
+                        
+                        {/* 风险与机会 */}
+                        <div className="grid grid-cols-2 gap-3 mt-3">
+                          <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-3">
+                            <div className="text-sm text-red-400 font-medium">⚠️ 风险</div>
+                            {task.analysis.risks.map((r, i) => (
+                              <div key={i} className="text-xs text-red-300 mt-1">• {r}</div>
+                            ))}
+                          </div>
+                          <div className="bg-green-900/20 border border-green-900/50 rounded-lg p-3">
+                            <div className="text-sm text-green-400 font-medium">💡 机会</div>
+                            {task.analysis.opportunities.length > 0 ? (
+                              task.analysis.opportunities.map((o, i) => (
+                                <div key={i} className="text-xs text-green-300 mt-1">• {o}</div>
+                              ))
+                            ) : (
+                              <div className="text-xs text-gray-500 mt-1">暂无明显机会</div>
+                            )}
                           </div>
                         </div>
                       </div>
-                      <button
-                        onClick={runAnalysis}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors"
-                      >
-                        重新分析
-                      </button>
                     </div>
-                  </div>
 
-                  {/* 技术指标 */}
-                  <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-                    <h3 className="text-sm font-medium text-gray-400 mb-3">📊 技术指标快照</h3>
-                    <div className="grid grid-cols-4 gap-4">
-                      <div className="text-center">
-                        <div className="text-xs text-gray-500">RSI</div>
-                        <div className={`font-bold ${
-                          currentAnalysis.technicalData.indicators.rsi > 70
-                            ? "text-red-400"
-                            : currentAnalysis.technicalData.indicators.rsi < 30
-                            ? "text-green-400"
-                            : "text-gray-300"
-                        }`}>
-                          {currentAnalysis.technicalData.indicators.rsi}
-                        </div>
+                    {/* Step 4: 交易指令（重点突出） */}
+                    <div className="flex gap-4">
+                      <div className="w-8 h-8 rounded-full bg-green-900 text-green-400 flex items-center justify-center text-sm font-bold shrink-0">
+                        4
                       </div>
-                      <div className="text-center">
-                        <div className="text-xs text-gray-500">MA7</div>
-                        <div className="font-bold text-gray-300">
-                          ${currentAnalysis.technicalData.indicators.ma7.toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs text-gray-500">MA14</div>
-                        <div className="font-bold text-gray-300">
-                          ${currentAnalysis.technicalData.indicators.ma14.toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs text-gray-500">趋势</div>
-                        <div className={`font-bold ${
-                          currentAnalysis.technicalData.indicators.trend === "up"
-                            ? "text-green-400"
-                            : currentAnalysis.technicalData.indicators.trend === "down"
-                            ? "text-red-400"
-                            : "text-gray-400"
-                        }`}>
-                          {currentAnalysis.technicalData.indicators.trend === "up"
-                            ? "上涨"
-                            : currentAnalysis.technicalData.indicators.trend === "down"
-                            ? "下跌"
-                            : "横盘"}
+                      <div className="flex-1">
+                        <h3 className="font-medium text-white mb-2">🎯 交易指令</h3>
+                        <div className="space-y-3">
+                          {task.tradingInstructions.map((inst, i) => (
+                            <div
+                              key={i}
+                              className={`rounded-lg border p-4 ${
+                                inst.action === "buy"
+                                  ? "bg-green-900/20 border-green-700"
+                                  : inst.action === "sell" || inst.action === "reduce"
+                                  ? "bg-red-900/20 border-red-700"
+                                  : "bg-gray-800 border-gray-700"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                  <span className="text-2xl">
+                                    {inst.action === "buy" ? "🟢" : inst.action === "sell" || inst.action === "reduce" ? "🔴" : "🟡"}
+                                  </span>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-lg font-bold ${
+                                        inst.action === "buy"
+                                          ? "text-green-400"
+                                          : inst.action === "sell" || inst.action === "reduce"
+                                          ? "text-red-400"
+                                          : "text-yellow-400"
+                                      }`}>
+                                        {inst.action === "buy" && "买入"}
+                                        {inst.action === "sell" && "卖出"}
+                                        {inst.action === "reduce" && "减仓"}
+                                        {inst.action === "hold" && "持有"}
+                                      </span>
+                                      <span className="text-white font-bold">{inst.symbol}</span>
+                                    </div>
+                                    <div className="text-sm text-gray-400">
+                                      建议仓位: {inst.percentage}% | 置信度: {(inst.confidence * 100).toFixed(0)}%
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  {!inst.executed && inst.action !== "hold" && (
+                                    <a
+                                      href="/"
+                                      className={`inline-block px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                        inst.action === "buy"
+                                          ? "bg-green-600 hover:bg-green-700 text-white"
+                                          : "bg-red-600 hover:bg-red-700 text-white"
+                                      }`}
+                                    >
+                                      执行 →
+                                    </a>
+                                  )}
+                                  {inst.executed && (
+                                    <span className="text-green-500 text-sm">✓ 已执行</span>
+                                  )}
+                                  {inst.action === "hold" && (
+                                    <span className="text-gray-500 text-sm">观望</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="mt-2 text-sm text-gray-400 bg-gray-900/50 rounded p-2">
+                                💡 {inst.reasoning}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
+
+                    {/* Step 5: 自动交易执行状态 */}
+                    {task.autoTradeExecutions && task.autoTradeExecutions.length > 0 && (
+                      <div className="flex gap-4">
+                        <div className="w-8 h-8 rounded-full bg-blue-900 text-blue-400 flex items-center justify-center text-sm font-bold shrink-0">
+                          5
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-medium text-white mb-2">🤖 自动交易执行</h3>
+                          <div className="space-y-2">
+                            {task.autoTradeExecutions.map((exec, i) => (
+                              <div
+                                key={i}
+                                className={`rounded-lg border p-3 ${
+                                  exec.execution.success
+                                    ? "bg-green-900/20 border-green-700"
+                                    : exec.riskCheck.passed
+                                    ? "bg-red-900/20 border-red-700"
+                                    : "bg-yellow-900/20 border-yellow-700"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className={
+                                      exec.execution.success
+                                        ? "text-green-400"
+                                        : exec.riskCheck.passed
+                                        ? "text-red-400"
+                                        : "text-yellow-400"
+                                    }>
+                                      {exec.execution.success ? "✓" : exec.riskCheck.passed ? "✗" : "⚠"}
+                                    </span>
+                                    <span className="text-sm text-white">
+                                      {exec.execution.success
+                                        ? "执行成功"
+                                        : exec.riskCheck.passed
+                                        ? "执行失败"
+                                        : "风控拦截"}
+                                    </span>
+                                  </div>
+                                  <span className="text-xs text-gray-500">
+                                    {new Date(exec.timestamp).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                                {exec.execution.success ? (
+                                  <div className="mt-2 text-sm text-gray-300">
+                                    {exec.instruction.action === "buy" ? "买入" : "卖出"} {exec.instruction.symbol} {exec.execution.amount.toFixed(6)}
+                                    <span className="text-gray-500"> @ ${exec.execution.price.toFixed(2)}</span>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      金额: ${exec.execution.total.toFixed(2)} | 手续费: ${exec.execution.fee.toFixed(2)}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mt-2 text-sm text-yellow-400">
+                                    原因: {exec.riskCheck.reason}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 6: 手动执行结果（如果有） */}
+                    {task.execution && (
+                      <div className="flex gap-4">
+                        <div className="w-8 h-8 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-sm font-bold shrink-0">
+                          {task.autoTradeExecutions ? "6" : "5"}
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-medium text-white mb-2">执行结果</h3>
+                          <div className="bg-gray-800 rounded-lg p-3">
+                            <div className="text-sm text-gray-400">
+                              执行时间: {task.execution.time.toLocaleString()}
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {task.execution.orders.map((order, i) => (
+                                <div key={i} className="flex items-center gap-2 text-sm">
+                                  <span className={order.side === "buy" ? "text-green-400" : "text-red-400"}>
+                                    {order.side === "buy" ? "买入" : "卖出"}
+                                  </span>
+                                  <span className="text-white">{order.symbol}</span>
+                                  <span className="text-gray-400">{order.amount}</span>
+                                  <span className="text-green-500 text-xs">({order.status})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ) : (
-                <div className="bg-gray-900 rounded-lg p-8 border border-gray-800 text-center text-gray-400">
-                  点击分析按钮开始
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* 历史决策记录 */
-          <div className="bg-gray-900 rounded-lg border border-gray-800">
-            <div className="p-4 border-b border-gray-800">
-              <h2 className="font-semibold text-white">历史决策记录</h2>
-            </div>
-            <div className="divide-y divide-gray-800">
-              {decisionHistory.length > 0 ? (
-                decisionHistory.map((record) => (
-                  <div key={record.id} className="p-4 hover:bg-gray-800/50 transition-colors">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-white">{record.symbol}</span>
-                        <span className="text-xs text-gray-500">
-                          {record.timestamp.toLocaleString()}
-                        </span>
-                      </div>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        record.consensusSentiment === "bullish"
-                          ? "bg-green-900 text-green-400"
-                          : record.consensusSentiment === "bearish"
-                          ? "bg-red-900 text-red-400"
-                          : "bg-gray-800 text-gray-400"
-                      }`}>
-                        {record.consensusSentiment === "bullish"
-                          ? "看涨"
-                          : record.consensusSentiment === "bearish"
-                          ? "看跌"
-                          : "中性"}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500">Bull:</span>
-                        <span className="ml-2 text-green-400">
-                          {(record.bullConfidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Bear:</span>
-                        <span className="ml-2 text-red-400">
-                          {(record.bearConfidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">操作:</span>
-                        <span className={`ml-2 ${
-                          record.action === "buy"
-                            ? "text-green-400"
-                            : record.action === "sell"
-                            ? "text-red-400"
-                            : "text-yellow-400"
-                        }`}>
-                          {record.action === "buy"
-                            ? "买入"
-                            : record.action === "sell"
-                            ? "卖出"
-                            : record.action === "watch"
-                            ? "观望"
-                            : "持有"}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-sm text-gray-400">{record.summary}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="p-8 text-center text-gray-500">
-                  暂无历史决策记录
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 底部说明 */}
+        <div className="mt-8 bg-gray-900 rounded-lg border border-gray-800 p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-2">关于 WarRoom</h3>
+          <p className="text-sm text-gray-500">
+            WarRoom 记录 {paName} 每一次 Portfolio 级别研判任务的完整过程。
+            每个任务从读取情报、异常检测、综合分析到生成交易指令，全程可追溯。
+            定时任务每15分钟执行一次，异常情况会立即触发深度分析。
+          </p>
+        </div>
       </main>
     </div>
   );

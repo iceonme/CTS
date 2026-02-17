@@ -118,7 +118,7 @@ export interface CFOAnalysis {
 
 export interface IntelligenceItem {
   id: string;
-  type: "price_alert" | "technical_signal" | "sentiment_shift" | "cfo_analysis" | "market_summary";
+  type: "price_alert" | "technical_signal" | "sentiment_shift" | "pa_analysis" | "cfo_analysis" | "market_summary";
   title: string;
   content: string;
   symbol: string;

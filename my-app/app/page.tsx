@@ -1,6 +1,34 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import ChatInterface from "./components/ChatInterface";
+import PADashboard from "./components/PADashboard";
+import { getPAConfigManager } from "@/lib/skills/config/manager";
+import type { PAConfigBundle } from "@/lib/skills/config/types";
 
 export default function Home() {
+  const [config, setConfig] = useState<PAConfigBundle | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // 初始化配置管理器并加载配置
+    const configManager = getPAConfigManager();
+    const loadedConfig = configManager.getConfig();
+    setConfig(loadedConfig);
+    setIsLoading(false);
+  }, []);
+
+  if (isLoading || !config) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-gray-400">加载助手配置中...</div>
+      </div>
+    );
+  }
+
+  const { identity, global } = config;
+  const watchlistDisplay = global.watchlist.symbols.join(", ");
+
   return (
     <div className="min-h-screen bg-gray-950">
       {/* 顶部导航 */}
@@ -8,19 +36,30 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">📈</span>
+              <span className="text-2xl">{identity.avatar}</span>
               <div>
-                <h1 className="text-xl font-bold text-white">CryptoPulse AI</h1>
-                <p className="text-xs text-gray-400">CTS - Crypto Trading Squad</p>
+                <h1 className="text-xl font-bold text-white">
+                  {identity.name}
+                  <span className="ml-2 text-sm font-normal text-gray-400">{identity.title}</span>
+                </h1>
+                <p className="text-xs text-gray-400">
+                  {identity.expertise.join(" · ")}
+                </p>
               </div>
             </div>
-            <nav className="flex gap-4">
+            <nav className="flex items-center gap-4">
               <a href="/" className="text-sm font-medium text-blue-400">首页</a>
               <a href="/feed" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
                 情报流
               </a>
               <a href="/warroom" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
                 WarRoom
+              </a>
+              <a
+                href="/settings"
+                className="text-sm font-medium text-gray-400 hover:text-white transition-colors"
+              >
+                ⚙️ 设置
               </a>
             </nav>
           </div>
@@ -47,27 +86,8 @@ export default function Home() {
               </div>
             </div>
 
-            {/* CFO 状态 */}
-            <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-              <h3 className="text-sm font-medium text-gray-400 mb-3">🤖 CFO 状态</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-300">状态</span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                    在线
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-300">盯盘频率</span>
-                  <span className="text-gray-400">15分钟</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-300">监控标的</span>
-                  <span className="text-gray-400">BTC, DOGE</span>
-                </div>
-              </div>
-            </div>
+            {/* PA 看板 */}
+            <PADashboard />
 
             {/* 快捷导航 */}
             <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
@@ -85,13 +105,27 @@ export default function Home() {
                 >
                   ⚔️ 进入 WarRoom
                 </a>
+                <a
+                  href="/settings"
+                  className="block px-3 py-2 bg-purple-900/30 hover:bg-purple-900/50 rounded-lg text-sm text-purple-300 transition-colors"
+                >
+                  ⚙️ 配置 {identity.name}
+                </a>
               </div>
+            </div>
+
+            {/* 欢迎语预览 */}
+            <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
+              <h3 className="text-sm font-medium text-gray-400 mb-2">💬 问候</h3>
+              <p className="text-xs text-gray-500 italic">
+                &ldquo;{identity.greeting.substring(0, 60)}...&rdquo;
+              </p>
             </div>
           </div>
 
-          {/* 右侧 - CFO 对话界面 */}
+          {/* 右侧 - PA 对话界面 */}
           <div className="lg:col-span-3 h-full">
-            <ChatInterface />
+            <ChatInterface paName={identity.name} paAvatar={identity.avatar} />
           </div>
         </div>
       </main>

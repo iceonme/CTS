@@ -5,7 +5,7 @@
  * - Tools: MCP 风格的工具注册
  * - Skills: 封装的领域知识
  * - Scheduler: 时间/事件驱动的调度器
- * - Config: 外部可配置的配置系统
+ * - Config: 外部可配置的配置系统 (支持 PA 可配置化)
  */
 
 // ==================== 核心导出 ====================
@@ -26,10 +26,10 @@ export {
   createFeedPublishSkill,
   TechAnalystFeedConfig,
   PolymarketFeedConfig,
-  CFOFeedConfig,
+  PAFeedConfig,  // 重命名自 CFOFeedConfig
   TechAnalystFeedSkill,
   PolymarketFeedSkill,
-  CFOFeedSkill,
+  PAFeedSkill,  // 重命名自 CFOFeedSkill
   subscribeToFeed,
   getFeedItems,
   clearFeed,
@@ -37,19 +37,19 @@ export {
 
 export { TechnicalAnalysisSkill } from './agents/tech-analysis-skill';
 
-// 配置系统 (新增)
+// 配置系统 (新增 - PA 可配置化)
 export {
-  getConfigManager,
-  ConfigManager,
+  getPAConfigManager,
+  PAConfigManager,
   createSkillFromConfig,
-  initializeConfigurableCFO,
-  getCFOConfigSummary,
+  initializeConfigurablePA,  // 重命名自 initializeConfigurableCFO
+  getPAConfigSummary,  // 重命名自 getCFOConfigSummary
 } from './config';
 
 export type {
   SkillConfig,
-  CFOGlobalConfig,
-  CFOConfigBundle,
+  PAGlobalConfig,  // 重命名自 CFOGlobalConfig
+  PAConfigBundle,  // 重命名自 CFOConfigBundle
   ConfigVersion,
   ConfigChangeEvent,
 } from './config';
@@ -61,10 +61,10 @@ import { skillRegistry } from './core/skill-registry';
 import { skillScheduler } from './core/skill-scheduler';
 
 import { CoinGeckoTools } from './tools/coingecko-tools';
-import { TechAnalystFeedSkill, PolymarketFeedSkill, CFOFeedSkill } from './agents/feed-publish-skill';
+import { TechAnalystFeedSkill, PolymarketFeedSkill, PAFeedSkill } from './agents/feed-publish-skill';
 import { TechnicalAnalysisSkill } from './agents/tech-analysis-skill';
 
-import { getConfigManager, initializeConfigurableCFO } from './config';
+import { getPAConfigManager, initializeConfigurablePA } from './config';
 
 /**
  * 初始化 Skills 系统
@@ -79,15 +79,15 @@ export function initializeSkillsSystem(useConfig: boolean = true): void {
   CoinGeckoTools.forEach(tool => toolRegistry.register(tool));
 
   if (useConfig) {
-    // 2. 使用可配置模式 - 从配置管理器加载
-    console.log('[SkillsSystem] Using configurable mode...');
-    initializeConfigurableCFO();
+    // 2. 使用可配置模式 - 从配置管理器加载 PA 配置
+    console.log('[SkillsSystem] Using configurable PA mode...');
+    initializeConfigurablePA();
   } else {
     // 3. 使用硬编码模式 - 注册预设 Skills
     console.log('[SkillsSystem] Registering preset Skills...');
     skillRegistry.register(TechAnalystFeedSkill);
     skillRegistry.register(PolymarketFeedSkill);
-    skillRegistry.register(CFOFeedSkill);
+    skillRegistry.register(PAFeedSkill);
     skillRegistry.register(TechnicalAnalysisSkill);
 
     // 设置事件监听
@@ -125,7 +125,7 @@ export function startAgentSchedules(): void {
   console.log('[SkillsSystem] Starting agent schedules...');
 
   // 从配置中获取调度信息
-  const configManager = getConfigManager();
+  const configManager = getPAConfigManager();
   const config = configManager.getConfig();
 
   for (const skillConfig of config.skills) {

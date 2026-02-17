@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getFeedItems, subscribeToFeed, triggerAllJobs } from "@/lib/feed/publisher";
+import { getPAConfigManager } from "@/lib/skills/config/manager";
 import type { IntelligenceItem } from "@/lib/types";
 
 export default function FeedPage() {
@@ -11,6 +12,16 @@ export default function FeedPage() {
     type?: string;
   }>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [paName, setPaName] = useState("投资助手");
+  const [paAvatar, setPaAvatar] = useState("🤖");
+
+  // 加载 PA 配置
+  useEffect(() => {
+    const configManager = getPAConfigManager();
+    const config = configManager.getConfig();
+    setPaName(config.identity.name);
+    setPaAvatar(config.identity.avatar);
+  }, []);
 
   // 加载 Feed 数据
   const loadFeed = () => {
@@ -47,8 +58,8 @@ export default function FeedPage() {
     switch (type) {
       case "technical_signal":
         return "📊";
-      case "cfo_analysis":
-        return "👔";
+      case "pa_analysis":
+        return paAvatar;
       case "sentiment_shift":
         return "🔮";
       case "price_alert":
@@ -63,8 +74,8 @@ export default function FeedPage() {
     switch (type) {
       case "technical_signal":
         return "技术分析";
-      case "cfo_analysis":
-        return "CFO研判";
+      case "pa_analysis":
+        return `${paName}研判`;
       case "sentiment_shift":
         return "预测市场";
       case "price_alert":
@@ -120,6 +131,12 @@ export default function FeedPage() {
                 )}
               </button>
               <a
+                href="/settings"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                ⚙️ 设置
+              </a>
+              <a
                 href="/"
                 className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
               >
@@ -155,7 +172,7 @@ export default function FeedPage() {
               >
                 <option value="">全部</option>
                 <option value="technical_signal">技术分析</option>
-                <option value="cfo_analysis">CFO研判</option>
+                <option value="pa_analysis">{paName}研判</option>
                 <option value="sentiment_shift">预测市场</option>
               </select>
             </div>
@@ -229,7 +246,7 @@ export default function FeedPage() {
                     </div>
                   )}
 
-                  {/* CFO 分析特有的 Bull/Bear 指示 */}
+                  {/* PA 分析特有的 Bull/Bear 指示 */}
                   {(item.data as Record<string, unknown>)?.bullConfidence !== undefined && (
                     <div className="flex gap-2 mt-3">
                       <div className="flex-1 bg-green-900/30 rounded p-2 text-center">
@@ -264,7 +281,7 @@ export default function FeedPage() {
 
         {/* 底部提示 */}
         <div className="mt-6 text-center text-xs text-gray-500">
-          <p>数据分析员每5分钟更新 · Polymarket专员每5分钟更新 · CFO每15分钟研判</p>
+          <p>技术分析员每5分钟更新 · Polymarket专员每5分钟更新 · {paName}每15分钟研判</p>
         </div>
       </main>
     </div>

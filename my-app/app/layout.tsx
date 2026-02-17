@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import AppProviders from "./components/AppProviders";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-[var(--background)]`}
       >
+        <AppProviders>
         <div className="flex flex-col min-h-screen">
           {/* Navigation */}
           <nav className="border-b border-[var(--border)] bg-[var(--card)]/50 backdrop-blur-sm sticky top-0 z-50">
@@ -42,9 +44,12 @@ export default function RootLayout({
                   <span className="font-semibold text-lg gradient-text">CryptoPulse AI</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <NavLink href="/" label="CFO 控制台" />
+                  <NavLink href="/" label="助手" />
+                  <NavLink href="/portfolio" label="资产" />
                   <NavLink href="/feed" label="情报流" />
                   <NavLink href="/warroom" label="作战室" />
+                  <NavLink href="/agents" label="MAS成员" />
+                  <NavLink href="/settings" label="设置" />
                 </div>
               </div>
             </div>
@@ -62,6 +67,7 @@ export default function RootLayout({
             </div>
           </footer>
         </div>
+        </AppProviders>
       </body>
     </html>
   );

@@ -183,7 +183,7 @@ class SkillScheduler {
 
   /**
    * Cron 表达式转毫秒 (简化版)
-   * 支持: */5 * * * * (每5分钟), 0 */1 * * * (每小时)
+   * 支持: 每5分钟, 每小时等
    */
   private cronToMs(cron: string): number {
     const parts = cron.split(' ');

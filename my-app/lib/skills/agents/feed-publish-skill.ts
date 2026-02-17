@@ -3,7 +3,7 @@
  * 
  * 这是一个通用 Skill，所有情报 Agent 都可以使用它来发布 Feed。
  * 但不同角色的 Agent 可以配置不同的:
- * - feedType: 情报类型 (technical/sentiment/prediction/cfo_decision)
+ * - feedType: 情报类型 (technical/sentiment/prediction/pa_decision)
  * - template: 发布内容的模板
  * - importance: 默认重要性
  * 
@@ -159,7 +159,9 @@ function getTemplateForType(feedType: string): string {
     'technical': '📊 **{symbol} 技术分析**\n\n{content}\n\n关键指标: {indicators}',
     'sentiment': '🔮 **预测市场情报**\n\n{title}\n\n当前概率: {probability}',
     'prediction': '🎯 **事件预测**\n\n{title}\n\n趋势: {trend}',
-    'cfo_decision': '👔 **CFO 研判**\n\n{symbol}: {decision}\n\n🐂 Bull: {bullConfidence}% | 🐻 Bear: {bearConfidence}%',
+    'pa_decision': '{avatar} **{paName} 研判**\n\n{symbol}: {decision}\n\n🐂 Bull: {bullConfidence}% | 🐻 Bear: {bearConfidence}%',
+    // 保留旧名称以兼容
+    'cfo_decision': '👔 **PA 研判**\n\n{symbol}: {decision}\n\n🐂 Bull: {bullConfidence}% | 🐻 Bear: {bearConfidence}%',
   };
   return templates[feedType] || '{title}\n\n{content}';
 }
@@ -169,14 +171,16 @@ function mapFeedType(feedType: string): FeedItem['type'] {
     'technical': 'analysis',
     'sentiment': 'signal',
     'prediction': 'alert',
-    'cfo_decision': 'report',
+    'pa_decision': 'report',
+    'cfo_decision': 'report', // 兼容旧名称
   };
   return map[feedType] || 'analysis';
 }
 
 function getAvatarForRole(role: string): string {
   const avatars: Record<string, string> = {
-    'cfo': '👔',
+    'pa': '🤖',  // PA 助手
+    'cfo': '👔', // 兼容旧角色
     'analyst': '📊',
     'specialist': '🔮',
     'tech-analyst': '📊',
@@ -221,14 +225,23 @@ export const PolymarketFeedConfig: FeedPublishConfig = {
   channels: ['war-room', 'feed'],
 };
 
-export const CFOFeedConfig: FeedPublishConfig = {
-  feedType: 'cfo_decision',
+// 新的 PA 配置 (推荐)
+export const PAFeedConfig: FeedPublishConfig = {
+  feedType: 'pa_decision',
   defaultImportance: 'high',
-  templateKey: 'cfo_decision',
+  templateKey: 'pa_decision',
   channels: ['war-room', 'feed', 'alert'],
 };
+
+// 保留旧名称以兼容
+/** @deprecated 使用 PAFeedConfig */
+export const CFOFeedConfig: FeedPublishConfig = PAFeedConfig;
 
 // 导出预设的 Skill 实例
 export const TechAnalystFeedSkill = createFeedPublishSkill(TechAnalystFeedConfig);
 export const PolymarketFeedSkill = createFeedPublishSkill(PolymarketFeedConfig);
-export const CFOFeedSkill = createFeedPublishSkill(CFOFeedConfig);
+export const PAFeedSkill = createFeedPublishSkill(PAFeedConfig);
+
+// 保留旧名称以兼容
+/** @deprecated 使用 PAFeedSkill */
+export const CFOFeedSkill = PAFeedSkill;

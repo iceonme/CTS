@@ -1,21 +1,21 @@
 /**
  * Skill 配置系统入口
  * 
- * 支持通过外部界面动态配置 CFO Skills
+ * 支持通过外部界面动态配置用户的 Personal Assistant (PA)
  */
 
 // 类型定义
 export * from './types';
 
 // 配置管理器
-export { getConfigManager, ConfigManager } from './manager';
+export { getPAConfigManager, PAConfigManager } from './manager';
 
-// ==================== 配置化 CFO Skill 工厂 ====================
+// ==================== 配置化 PA Skill 工厂 ====================
 
 import type { Skill, SkillContext, SkillResult } from '../types';
 import type { SkillConfig } from './types';
 import { skillRegistry } from '../core/skill-registry';
-import { getConfigManager } from './manager';
+import { getPAConfigManager } from './manager';
 
 /**
  * 从配置创建 Skill
@@ -44,7 +44,7 @@ export function createSkillFromConfig(config: SkillConfig): Skill {
       properties: {},
     },
 
-    triggers: config.triggers,
+    triggers: convertTriggers(config.triggers),
 
     // 执行函数 - 从配置动态生成
     execute: async (context: SkillContext): Promise<SkillResult> => {
@@ -70,14 +70,39 @@ export function createSkillFromConfig(config: SkillConfig): Skill {
 }
 
 /**
- * 初始化可配置 CFO 系统
+ * 将 SkillConfig 的 triggers 转换为 SkillTrigger[]
+ */
+function convertTriggers(triggers: SkillConfig['triggers']): Skill['triggers'] {
+  const result: Skill['triggers'] = [];
+  
+  if (triggers.cron) {
+    result.push({
+      type: 'cron',
+      schedule: triggers.cron,
+    });
+  }
+  
+  if (triggers.events) {
+    triggers.events.forEach(event => {
+      result.push({
+        type: 'event',
+        event,
+      });
+    });
+  }
+  
+  return result.length > 0 ? result : undefined;
+}
+
+/**
+ * 初始化可配置 PA 系统
  * 
  * 从配置管理器加载配置，注册所有启用的 Skills
  */
-export function initializeConfigurableCFO(): void {
-  console.log('[ConfigurableCFO] Initializing...');
+export function initializeConfigurablePA(): void {
+  console.log('[ConfigurablePA] Initializing...');
 
-  const configManager = getConfigManager();
+  const configManager = getPAConfigManager();
   const config = configManager.getConfig();
 
   // 1. 注册所有启用的 Skills
@@ -85,13 +110,13 @@ export function initializeConfigurableCFO(): void {
     if (skillConfig.enabled) {
       const skill = createSkillFromConfig(skillConfig);
       skillRegistry.register(skill);
-      console.log(`[ConfigurableCFO] Registered skill: ${skill.id}`);
+      console.log(`[ConfigurablePA] Registered skill: ${skill.id}`);
     }
   }
 
   // 2. 订阅配置变更，实现热更新
   configManager.subscribe((event) => {
-    console.log('[ConfigurableCFO] Config changed:', event);
+    console.log('[ConfigurablePA] Config changed:', event);
     
     if (event.type === 'skill:updated') {
       // 重新注册更新的 Skill
@@ -99,7 +124,7 @@ export function initializeConfigurableCFO(): void {
       if (skillConfig && skillConfig.enabled) {
         const skill = createSkillFromConfig(skillConfig);
         skillRegistry.register(skill);
-        console.log(`[ConfigurableCFO] Hot-reloaded skill: ${skill.id}`);
+        console.log(`[ConfigurablePA] Hot-reloaded skill: ${skill.id}`);
       }
     }
     
@@ -112,21 +137,21 @@ export function initializeConfigurableCFO(): void {
     }
   });
 
-  console.log('[ConfigurableCFO] Initialization complete');
+  console.log('[ConfigurablePA] Initialization complete');
 }
 
 /**
- * 获取 CFO 当前配置摘要
+ * 获取 PA 当前配置摘要
  */
-export function getCFOConfigSummary(): {
+export function getPAConfigSummary(): {
   name: string;
   enabledSkills: string[];
   workMode: string;
 } {
-  const config = getConfigManager().getConfig();
+  const config = getPAConfigManager().getConfig();
   return {
-    name: config.global.base.name,
+    name: config.identity.name,
     enabledSkills: config.global.enabledSkills,
-    workMode: config.global.workMode.autoExecute ? '自动执行' : '手动确认',
+    workMode: config.global.workMode.riskLevel,
   };
 }

@@ -6,7 +6,8 @@
 import BaseAgent from "./base";
 import { getTechnicalAnalyst, type TechnicalAnalyst } from "./tech-analyst";
 import { analyzeWithCFO, analyzeMultipleWithCFO } from "@/lib/cfo/reasoning";
-import type { AgentTask, MarketSentiment, CFOPerspective, CFOAnalysis, TechnicalAnalysis } from "@/lib/types";
+import { getFeedItems } from "@/lib/feed/publisher";
+import type { AgentTask, MarketSentiment, CFOPerspective, CFOAnalysis, TechnicalAnalysis, IntelligenceItem } from "@/lib/types";
 
 interface CFOTask {
   type: "single_analysis" | "market_overview" | "portfolio_review";
@@ -259,6 +260,172 @@ export class CFOAgent extends BaseAgent {
     }
 
     return insights.sort((a, b) => b.confidence - a.confidence);
+  }
+
+  // ==================== 基于 Feed 的智能判断 ====================
+
+  /**
+   * 基于 Feed 情报做交易决策
+   * 综合分析所有 Agent 发布的情报，给出交易建议
+   */
+  async analyzeFromFeed(symbols?: string[]): Promise<{
+    symbol: string;
+    action: "buy" | "sell" | "hold" | "watch";
+    confidence: number;
+    reasoning: string;
+    position: {
+      size: "small" | "medium" | "large";
+      percentage: number; // 建议仓位百分比
+    };
+    stopLoss?: number;
+    takeProfit?: number;
+    timeframe: string;
+  }[]> {
+    const targetSymbols = symbols || ["BTC", "DOGE"];
+    const recommendations: Awaited<ReturnType<typeof this.analyzeFromFeed>> = [];
+
+    // 获取最近的情报（30分钟内）
+    const recentFeeds = getFeedItems({ limit: 50 });
+    const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+    const relevantFeeds = recentFeeds.filter(
+      f => f.timestamp.getTime() > thirtyMinutesAgo
+    );
+
+    for (const symbol of targetSymbols) {
+      // 筛选该币种相关的情报
+      const symbolFeeds = relevantFeeds.filter(f => 
+        f.symbol === symbol || f.title.includes(symbol)
+      );
+
+      // 分类统计
+      const techSignals = symbolFeeds.filter(f => f.type === "technical_signal");
+      const paAnalyses = symbolFeeds.filter(f => f.type === "pa_analysis");
+      const sentimentFeeds = symbolFeeds.filter(f => f.type === "sentiment_shift");
+
+      // 计算综合得分
+      let bullishScore = 0;
+      let bearishScore = 0;
+      let totalWeight = 0;
+
+      // 技术分析权重 40%
+      techSignals.forEach(feed => {
+        const data = feed.data as Record<string, unknown>;
+        if (data?.signalType === "buy" || data?.signalType === "strong_buy") {
+          bullishScore += (data.signalConfidence as number || 0.5) * 0.4;
+          totalWeight += 0.4;
+        } else if (data?.signalType === "sell" || data?.signalType === "strong_sell") {
+          bearishScore += (data.signalConfidence as number || 0.5) * 0.4;
+          totalWeight += 0.4;
+        }
+      });
+
+      // PA 研判权重 35%
+      paAnalyses.forEach(feed => {
+        const data = feed.data as Record<string, unknown>;
+        const bullConf = (data?.bullConfidence as number) || 0;
+        const bearConf = (data?.bearConfidence as number) || 0;
+        const consensus = data?.consensusSentiment as string;
+        
+        if (consensus === "bullish") {
+          bullishScore += bullConf * 0.35;
+          totalWeight += 0.35;
+        } else if (consensus === "bearish") {
+          bearishScore += bearConf * 0.35;
+          totalWeight += 0.35;
+        }
+      });
+
+      // 预测市场情绪权重 25%
+      sentimentFeeds.forEach(feed => {
+        const data = feed.data as Record<string, unknown>;
+        const sentiment = data?.sentiment as number;
+        if (sentiment > 0.6) {
+          bullishScore += sentiment * 0.25;
+          totalWeight += 0.25;
+        } else if (sentiment < 0.4) {
+          bearishScore += (1 - sentiment) * 0.25;
+          totalWeight += 0.25;
+        }
+      });
+
+      // 计算置信度和决策
+      const confidence = totalWeight > 0 ? Math.abs(bullishScore - bearishScore) / totalWeight : 0;
+      let action: "buy" | "sell" | "hold" | "watch";
+      let reasoning = "";
+      let positionSize: "small" | "medium" | "large" = "small";
+      let percentage = 10;
+
+      if (confidence < 0.3) {
+        action = "watch";
+        reasoning = `信号不明确，建议观望。技术信号${techSignals.length}个，PA研判${paAnalyses.length}个。`;
+      } else if (bullishScore > bearishScore) {
+        action = confidence > 0.7 ? "buy" : "hold";
+        positionSize = confidence > 0.8 ? "large" : confidence > 0.6 ? "medium" : "small";
+        percentage = Math.round(confidence * 30); // 最多30%仓位
+        reasoning = `综合${techSignals.length}个技术信号和${paAnalyses.length}个PA研判，看涨因素占优。`;
+      } else {
+        action = confidence > 0.7 ? "sell" : "hold";
+        positionSize = confidence > 0.8 ? "large" : confidence > 0.6 ? "medium" : "small";
+        percentage = Math.round(confidence * 25);
+        reasoning = `综合${techSignals.length}个技术信号和${paAnalyses.length}个PA研判，看跌因素占优。`;
+      }
+
+      // 获取当前价格用于计算止损止盈
+      const currentPrice = await this.getCurrentPrice(symbol);
+      const stopLoss = action === "buy" ? currentPrice * 0.95 : action === "sell" ? currentPrice * 1.05 : undefined;
+      const takeProfit = action === "buy" ? currentPrice * 1.1 : action === "sell" ? currentPrice * 0.9 : undefined;
+
+      recommendations.push({
+        symbol,
+        action,
+        confidence: Math.round(confidence * 100) / 100,
+        reasoning,
+        position: {
+          size: positionSize,
+          percentage,
+        },
+        stopLoss,
+        takeProfit,
+        timeframe: "短期（1-3天）",
+      });
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * 获取当前价格（简化版，实际应从缓存或API获取）
+   */
+  private async getCurrentPrice(symbol: string): Promise<number> {
+    const mockPrices: Record<string, number> = {
+      BTC: 50000,
+      DOGE: 0.15,
+      ETH: 3000,
+      SOL: 100,
+    };
+    return mockPrices[symbol] || 100;
+  }
+
+  /**
+   * 格式化 Feed 分析为交易建议
+   */
+  formatTradeRecommendation(rec: Awaited<ReturnType<typeof this.analyzeFromFeed>>[0]): string {
+    const actionEmoji = rec.action === "buy" ? "🟢 买入" : rec.action === "sell" ? "🔴 卖出" : rec.action === "hold" ? "🟡 持有" : "⚪ 观望";
+    const sizeText = rec.position.size === "large" ? "重仓" : rec.position.size === "medium" ? "中仓" : "轻仓";
+    
+    let response = `**${rec.symbol} 交易建议**\n\n`;
+    response += `${actionEmoji} | 置信度: ${(rec.confidence * 100).toFixed(0)}%\n`;
+    response += `建议仓位: ${sizeText} (${rec.position.percentage}%)\n\n`;
+    response += `💡 **判断依据**: ${rec.reasoning}\n\n`;
+    
+    if (rec.stopLoss && rec.takeProfit) {
+      response += `🛑 止损: $${rec.stopLoss.toFixed(rec.symbol === "DOGE" ? 4 : 0)}\n`;
+      response += `🎯 止盈: $${rec.takeProfit.toFixed(rec.symbol === "DOGE" ? 4 : 0)}\n`;
+    }
+    
+    response += `⏰ 时间框架: ${rec.timeframe}`;
+    
+    return response;
   }
 
   // ==================== 格式化输出 ====================

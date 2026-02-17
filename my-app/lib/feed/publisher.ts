@@ -189,10 +189,10 @@ export async function runPolymarketFeedJob(): Promise<void> {
 }
 
 /**
- * CFO 每15分钟发布盯盘结果
+ * PA 每15分钟发布盯盘结果
  */
-export async function runCFOWatchJob(): Promise<void> {
-  console.log("[FeedJob] 正在运行 CFO 盯盘任务...");
+export async function runPAWatchJob(): Promise<void> {
+  console.log("[FeedJob] 正在运行 PA 盯盘任务...");
   
   const cfo = getCFOAgent();
   
@@ -202,15 +202,15 @@ export async function runCFOWatchJob(): Promise<void> {
     
     analyses.forEach(analysis => {
       const item: IntelligenceItem = {
-        id: `cfo-${analysis.symbol}-${Date.now()}`,
-        type: "cfo_analysis",
-        title: `${analysis.symbol} CFO 研判报告`,
+        id: `pa-${analysis.symbol}-${Date.now()}`,
+        type: "pa_analysis",
+        title: `${analysis.symbol} PA 研判报告`,
         content: cfo.formatAnalysisForChat(analysis),
         symbol: analysis.symbol,
         timestamp: new Date(),
         importance: analysis.consensus.confidence > 0.7 ? "high" : "medium",
         data: {
-          source: "cfo",
+          source: "pa",
           bullConfidence: analysis.perspectives.bull.confidence,
           bearConfidence: analysis.perspectives.bear.confidence,
           consensusSentiment: analysis.consensus.sentiment,
@@ -222,9 +222,9 @@ export async function runCFOWatchJob(): Promise<void> {
       publishToFeed(item);
     });
     
-    console.log(`[FeedJob] CFO 已发布 ${analyses.length} 条情报`);
+    console.log(`[FeedJob] PA 已发布 ${analyses.length} 条情报`);
   } catch (error) {
-    console.error("[FeedJob] CFO 任务失败:", error);
+    console.error("[FeedJob] PA 任务失败:", error);
   }
 }
 
@@ -243,7 +243,7 @@ export function startFeedScheduler(): void {
   // 立即执行一次
   runTechAnalystFeedJob();
   runPolymarketFeedJob();
-  runCFOWatchJob();
+  runPAWatchJob();
   
   // 技术分析员：每5分钟
   techInterval = setInterval(runTechAnalystFeedJob, 5 * 60 * 1000);
@@ -251,10 +251,10 @@ export function startFeedScheduler(): void {
   // Polymarket：每5分钟
   polymarketInterval = setInterval(runPolymarketFeedJob, 5 * 60 * 1000);
   
-  // CFO：每15分钟
-  cfoInterval = setInterval(runCFOWatchJob, 15 * 60 * 1000);
+  // PA：每15分钟
+  cfoInterval = setInterval(runPAWatchJob, 15 * 60 * 1000);
   
-  console.log("[FeedScheduler] 已启动 - 技术分析员: 5分钟, Polymarket: 5分钟, CFO: 15分钟");
+  console.log("[FeedScheduler] 已启动 - 技术分析员: 5分钟, Polymarket: 5分钟, PA: 15分钟");
 }
 
 /**
@@ -275,6 +275,6 @@ export async function triggerAllJobs(): Promise<void> {
   await Promise.all([
     runTechAnalystFeedJob(),
     runPolymarketFeedJob(),
-    runCFOWatchJob(),
+    runPAWatchJob(),
   ]);
 }

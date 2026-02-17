@@ -67,14 +67,21 @@ class SkillRegistry {
     }
 
     // 将工具注入上下文
+    const mergedTools = new Map(context.tools);
+    // 注入 Skill 所需的工具
+    skill.tools.required.forEach(id => {
+      const tool = toolRegistry.get(id);
+      if (tool) mergedTools.set(id, tool);
+    });
+    // 注入可选工具
+    (skill.tools.optional || []).forEach(id => {
+      const tool = toolRegistry.get(id);
+      if (tool) mergedTools.set(id, tool);
+    });
+    
     const enrichedContext: SkillContext = {
       ...context,
-      tools: new Map([
-        ...context.tools,
-        // 注入 Skill 所需的工具
-        ...skill.tools.required.map(id => [id, toolRegistry.get(id)!]),
-        ...(skill.tools.optional || []).filter(id => toolRegistry.has(id)).map(id => [id, toolRegistry.get(id)!]),
-      ]),
+      tools: mergedTools,
     };
 
     const startTime = Date.now();

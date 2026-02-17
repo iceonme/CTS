@@ -164,7 +164,7 @@ export const TechnicalAnalysisSkill: Skill = {
       }
 
       // 2. 分析每个币种
-      const analyses = symbols.map(symbol => {
+      const analyses = symbols.map((symbol: string) => {
         const prices = symbol === 'BTC' 
           ? marketData.btcChart.prices.map((p: number[]) => p[1])
           : marketData.dogeChart.prices.map((p: number[]) => p[1]);
