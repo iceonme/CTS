@@ -1,447 +1,300 @@
 /**
- * Technical Analyst Agent
- * 技术分析员 - 计算和分析技术指标
+ * Technical Analyst - 技术分析员
+ * 
+ * 一个受限的专业 Agent：
+ * 1. 低自主性，不能动态发现 Skills
+ * 2. 只能回答技术分析相关问题
+ * 3. 超出范围时直接拒绝
+ * 4. 被动响应，不支持主动任务
  */
 
-import BaseAgent from "./base";
-import { getBTCAndDOGEData, getCoinMarketChart, type CoinMarketChart } from "@/lib/data/coingecko";
+import { BaseAgent } from '@/lib/core/base-agent';
 import type {
-  AgentTask,
-  TechnicalIndicators,
-  TechnicalAnalysis,
-  TechnicalSignal,
-  SignalType,
-} from "@/lib/types";
+  AgentConfig,
+  ChatContext,
+  ChatResponse,
+} from '@/lib/core/types';
 
-interface TechAnalysisTask {
-  symbol: string;
-  coinId?: string; // CoinGecko ID
-  days?: string; // 数据天数
-}
+// ========== 技术分析员配置 ==========
 
-interface MultiAssetAnalysis {
-  analyses: TechnicalAnalysis[];
-  prices: Array<{ symbol: string; price: number }>;
-  timestamp: Date;
-}
-
-export class TechnicalAnalyst extends BaseAgent {
-  private coinIdMap: Record<string, string> = {
-    BTC: "bitcoin",
-    DOGE: "dogecoin",
-    ETH: "ethereum",
-    SOL: "solana",
-    XRP: "ripple",
-    ADA: "cardano",
-    AVAX: "avalanche-2",
-    DOT: "polkadot",
-  };
-
-  constructor() {
-    super({
-      name: "TechAnalyst",
-      role: "tech-analyst",
-      systemPrompt: `你是加密货币市场的技术分析专家。
+const TECH_ANALYST_CONFIG: AgentConfig = {
+  identity: {
+    id: 'tech-analyst',
+    name: '技术分析员',
+    role: 'Technical Analyst',
+    personality: '严谨、数据驱动、不善言辞',
+    background: '专注于技术指标分析，只看图表和数据，不做情绪判断',
+  },
+  prompts: {
+    system: `你是技术分析员，只专注于技术指标分析。
 
 你的职责：
-1. 计算和分析技术指标（RSI、MA、波动率）
-2. 识别趋势、支撑位和阻力位
-3. 基于技术分析生成买入/卖出/中性信号
-4. 提供清晰、数据驱动的洞察
+1. 分析 RSI、MACD、均线等技术指标
+2. 识别图表形态和支撑阻力位
+3. 基于数据给出客观分析
 
-始终保持数字精确，并清楚解释你的推理过程。`,
+你**不会**：
+- 讨论基本面或新闻
+- 给出买入/卖出建议（这是 PA 的职责）
+- 回答与技术分析无关的问题`,
+    constraints: [
+      '只回答技术分析相关问题',
+      '不提供投资建议',
+      '不讨论基本面',
+      '超出范围时明确拒绝',
+    ],
+  },
+  capabilities: {
+    baseSkills: [
+      'analysis:technical',    // 深度技术分析
+      'analysis:rsi',          // RSI 指标
+      'analysis:trend',        // 趋势分析
+    ],
+    extendableSkills: [],      // 不能动态添加 Skills
+    memoryAccess: {
+      session: true,
+      individual: true,
+      collective: true,        // 可以读取集体记忆中的技术信号
+    },
+  },
+  behavior: {
+    autonomy: 'low',           // 低自主性
+    outOfScopeStrategy: 'reject',  // 超出范围直接拒绝
+    proactiveEnabled: false,   // 不支持主动任务
+    canUseDynamicSkills: false,
+  },
+  isPrimary: false,
+};
+
+// ========== 技术分析员实现 ==========
+
+export class TechnicalAnalyst extends BaseAgent {
+  constructor(config?: Partial<AgentConfig>) {
+    const mergedConfig: AgentConfig = {
+      ...TECH_ANALYST_CONFIG,
+      ...config,
+      identity: { ...TECH_ANALYST_CONFIG.identity, ...config?.identity },
+      prompts: { ...TECH_ANALYST_CONFIG.prompts, ...config?.prompts },
+      capabilities: { ...TECH_ANALYST_CONFIG.capabilities, ...config?.capabilities },
+      behavior: { ...TECH_ANALYST_CONFIG.behavior, ...config?.behavior },
+      isPrimary: false,
+    };
+    super(mergedConfig);
+  }
+
+  /**
+   * 主对话入口
+   */
+  async chat(message: string, context?: ChatContext): Promise<ChatResponse> {
+    // 记录用户消息
+    this.memory.session.addMessage('user', message);
+
+    // 检查是否在范围内
+    const scopeCheck = this.checkScope(message);
+    if (!scopeCheck.inScope) {
+      const response = this.handleOutOfScope(message);
+      this.memory.session.addMessage('assistant', response.content);
+      return response;
+    }
+
+    // 解析意图
+    const intent = this.parseIntent(message);
+
+    // 执行分析
+    let response: ChatResponse;
+    try {
+      switch (intent.type) {
+        case 'rsi':
+          response = await this.handleRSIQuery(intent.symbol);
+          break;
+        case 'trend':
+          response = await this.handleTrendQuery(intent.symbol);
+          break;
+        case 'comprehensive':
+          response = await this.handleComprehensiveAnalysis(intent.symbol);
+          break;
+        default:
+          response = await this.handleGeneralTechnicalQuery(message);
+      }
+    } catch (error) {
+      response = {
+        content: `分析失败：${error instanceof Error ? error.message : '未知错误'}`,
+      };
+    }
+
+    // 记录回复
+    this.memory.session.addMessage('assistant', response.content);
+
+    // 更新统计
+    this.memory.individual.updateStats({
+      totalAnalyses: this.memory.individual.stats.totalAnalyses + 1,
     });
-  }
 
-  // ==================== 核心分析方法 ====================
-
-  /**
-   * 计算 RSI (Relative Strength Index)
-   * 使用 14 周期标准计算
-   */
-  private calculateRSI(prices: number[], period: number = 14): number {
-    if (prices.length < period + 1) {
-      throw new Error(`RSI 计算需要至少 ${period + 1} 个价格点`);
-    }
-
-    let gains = 0;
-    let losses = 0;
-
-    // 计算初始平均涨跌
-    for (let i = 1; i <= period; i++) {
-      const change = prices[i] - prices[i - 1];
-      if (change > 0) gains += change;
-      else losses += Math.abs(change);
-    }
-
-    let avgGain = gains / period;
-    let avgLoss = losses / period;
-
-    // 使用平滑 RSI 计算
-    for (let i = period + 1; i < prices.length; i++) {
-      const change = prices[i] - prices[i - 1];
-      const gain = change > 0 ? change : 0;
-      const loss = change < 0 ? Math.abs(change) : 0;
-
-      avgGain = (avgGain * (period - 1) + gain) / period;
-      avgLoss = (avgLoss * (period - 1) + loss) / period;
-    }
-
-    if (avgLoss === 0) return 100;
-
-    const rs = avgGain / avgLoss;
-    const rsi = 100 - 100 / (1 + rs);
-
-    return Math.round(rsi * 100) / 100;
+    return response;
   }
 
   /**
-   * 计算简单移动平均线 (SMA)
+   * 覆盖范围检查 - 技术分析员只处理技术相关问题
    */
-  private calculateSMA(prices: number[], period: number): number {
-    if (prices.length < period) {
-      throw new Error(`SMA 计算需要至少 ${period} 个价格点`);
+  protected checkScope(message: string): { inScope: boolean; reason?: string } {
+    const technicalKeywords = [
+      'rsi', 'macd', '均线', 'ma', '趋势', 'trend', '支撑', '阻力', 
+      '分析', 'technical', '指标', 'indicator', '图表', 'chart',
+      '突破', 'breakout', '回调', 'pullback', '超买', 'oversold',
+      '超卖', 'overbought', '金叉', '死叉', '背离', 'divergence'
+    ];
+    
+    const hasTechnicalKeyword = technicalKeywords.some(kw => 
+      message.toLowerCase().includes(kw.toLowerCase())
+    );
+
+    if (!hasTechnicalKeyword) {
+      return { 
+        inScope: false, 
+        reason: 'Message does not contain technical analysis keywords' 
+      };
     }
 
-    const slice = prices.slice(-period);
-    const sum = slice.reduce((acc, price) => acc + price, 0);
-    return Math.round((sum / period) * 100) / 100;
+    return { inScope: true };
   }
 
   /**
-   * 计算指数移动平均线 (EMA)
+   * 解析技术相关的意图
    */
-  private calculateEMA(prices: number[], period: number): number {
-    if (prices.length < period) {
-      throw new Error(`EMA 计算需要至少 ${period} 个价格点`);
+  private parseIntent(message: string): {
+    type: 'rsi' | 'trend' | 'comprehensive' | 'general';
+    symbol?: string;
+  } {
+    const lower = message.toLowerCase();
+    const symbol = this.extractSymbol(lower) || 'BTC';
+
+    if (/rsi/i.test(lower)) {
+      return { type: 'rsi', symbol };
     }
 
-    const multiplier = 2 / (period + 1);
-    let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
-
-    for (let i = period; i < prices.length; i++) {
-      ema = (prices[i] - ema) * multiplier + ema;
+    if (/趋势|trend|均线|ma/i.test(lower)) {
+      return { type: 'trend', symbol };
     }
 
-    return Math.round(ema * 100) / 100;
+    if (/综合|全面|comprehensive|详细/i.test(lower)) {
+      return { type: 'comprehensive', symbol };
+    }
+
+    return { type: 'general', symbol };
   }
 
   /**
-   * 计算波动率（价格标准差）
+   * 处理 RSI 查询
    */
-  private calculateVolatility(prices: number[], period: number = 14): number {
-    if (prices.length < period) return 0;
+  private async handleRSIQuery(symbol: string): Promise<ChatResponse> {
+    // 执行 RSI 分析 Skill
+    const result = await this.executeSkill('analysis:rsi', { symbol });
 
-    const slice = prices.slice(-period);
-    const mean = slice.reduce((a, b) => a + b, 0) / period;
-    const squaredDiffs = slice.map(price => Math.pow(price - mean, 2));
-    const variance = squaredDiffs.reduce((a, b) => a + b, 0) / period;
-    const stdDev = Math.sqrt(variance);
+    let content = `📊 **${symbol} RSI 分析**\n\n`;
+    content += `当前 RSI: ${result.rsi?.toFixed(2) || 'N/A'}\n`;
+    content += `状态: ${this.getRSIStatus(result.rsi)}\n\n`;
+    
+    if (result.rsi > 70) {
+      content += `⚠️ 超买区域，注意回调风险`;
+    } else if (result.rsi < 30) {
+      content += `⚠️ 超卖区域，可能存在反弹机会`;
+    } else {
+      content += `✓ 中性区域`;
+    }
 
-    // 返回相对波动率（标准差/均值 * 100）
-    return Math.round((stdDev / mean) * 100 * 100) / 100;
+    // 记录到个体记忆
+    this.memory.individual.addExperience({
+      type: 'analysis',
+      content: `RSI analysis for ${symbol}: ${result.rsi?.toFixed(2)}`,
+      result: 'success',
+      metadata: { symbol, rsi: result.rsi },
+    });
+
+    return { content };
   }
 
   /**
-   * 识别趋势
+   * 处理趋势查询
    */
-  private identifyTrend(prices: number[]): "up" | "down" | "sideways" {
-    if (prices.length < 14) return "sideways";
+  private async handleTrendQuery(symbol: string): Promise<ChatResponse> {
+    const result = await this.executeSkill('analysis:trend', { symbol });
 
-    const ma7 = this.calculateSMA(prices, 7);
-    const ma14 = this.calculateSMA(prices, 14);
-    const currentPrice = prices[prices.length - 1];
+    let content = `📈 **${symbol} 趋势分析**\n\n`;
+    content += `短期趋势: ${result.shortTerm || 'N/A'}\n`;
+    content += `中期趋势: ${result.mediumTerm || 'N/A'}\n`;
+    content += `长期趋势: ${result.longTerm || 'N/A'}\n\n`;
+    
+    if (result.keyLevels) {
+      content += `关键价位:\n`;
+      content += `- 支撑位: $${result.keyLevels.support?.join(', $') || 'N/A'}\n`;
+      content += `- 阻力位: $${result.keyLevels.resistance?.join(', $') || 'N/A'}\n`;
+    }
 
-    // 价格相对于均线的位置
-    const aboveMa7 = currentPrice > ma7;
-    const aboveMa14 = currentPrice > ma14;
-    const goldenCross = ma7 > ma14;
-
-    if (aboveMa7 && aboveMa14 && goldenCross) return "up";
-    if (!aboveMa7 && !aboveMa14 && !goldenCross) return "down";
-    return "sideways";
+    return { content };
   }
 
   /**
-   * 计算支撑位和阻力位（简单实现）
+   * 处理综合分析
    */
-  private calculateSupportResistance(
-    prices: number[]
-  ): { support: number; resistance: number } {
-    const window = 10;
-    const recentPrices = prices.slice(-window * 3);
+  private async handleComprehensiveAnalysis(symbol: string): Promise<ChatResponse> {
+    // 受限 Agent：只能按顺序执行预设的 Skills，不能动态协调
+    const [rsiResult, trendResult] = await this.executeSkills([
+      { skillId: 'analysis:rsi', params: { symbol } },
+      { skillId: 'analysis:trend', params: { symbol } },
+    ]);
 
-    let support = Math.min(...recentPrices);
-    let resistance = Math.max(...recentPrices);
+    let content = `📊 **${symbol} 技术分析报告**\n\n`;
+    
+    content += `【RSI】\n`;
+    content += `数值: ${rsiResult.rsi?.toFixed(2) || 'N/A'}\n`;
+    content += `状态: ${this.getRSIStatus(rsiResult.rsi)}\n\n`;
+    
+    content += `【趋势】\n`;
+    content += `短期: ${trendResult.shortTerm || 'N/A'}\n`;
+    content += `中期: ${trendResult.mediumTerm || 'N/A'}\n\n`;
+    
+    content += `【客观数据】\n`;
+    content += `本分析仅供参考，不构成投资建议。\n`;
+    content += `如需交易建议，请咨询 PA。`;
 
-    // 稍微调整使其更合理
-    support = Math.round(support * 0.995 * 100) / 100;
-    resistance = Math.round(resistance * 1.005 * 100) / 100;
-
-    return { support, resistance };
-  }
-
-  // ==================== 信号生成 ====================
-
-  /**
-   * 基于技术指标生成交易信号
-   */
-  private generateSignals(
-    symbol: string,
-    indicators: TechnicalIndicators,
-    prices: number[]
-  ): TechnicalSignal[] {
-    const signals: TechnicalSignal[] = [];
-
-    // RSI 信号
-    if (indicators.rsi > 70) {
-      signals.push({
-        type: "sell",
-        indicator: "RSI",
-        confidence: Math.min((indicators.rsi - 70) / 30, 1),
-        description: `${symbol} RSI 超买 (${indicators.rsi})`,
-      });
-    } else if (indicators.rsi < 30) {
-      signals.push({
-        type: "buy",
-        indicator: "RSI",
-        confidence: Math.min((30 - indicators.rsi) / 30, 1),
-        description: `${symbol} RSI 超卖 (${indicators.rsi})`,
-      });
-    }
-
-    // 移动平均线信号
-    const currentPrice = prices[prices.length - 1];
-    if (currentPrice > indicators.ma7 && indicators.ma7 > indicators.ma14) {
-      signals.push({
-        type: "buy",
-        indicator: "MA 趋势",
-        confidence: 0.7,
-        description: `${symbol} 价格在 MA7 之上，MA7 在 MA14 之上 - 看涨趋势`,
-      });
-    } else if (currentPrice < indicators.ma7 && indicators.ma7 < indicators.ma14) {
-      signals.push({
-        type: "sell",
-        indicator: "MA 趋势",
-        confidence: 0.7,
-        description: `${symbol} 价格在 MA7 之下，MA7 在 MA14 之下 - 看跌趋势`,
-      });
-    }
-
-    // 趋势信号
-    if (indicators.trend === "up") {
-      signals.push({
-        type: "buy",
-        indicator: "趋势",
-        confidence: 0.6,
-        description: `${symbol} 处于上涨趋势`,
-      });
-    } else if (indicators.trend === "down") {
-      signals.push({
-        type: "sell",
-        indicator: "趋势",
-        confidence: 0.6,
-        description: `${symbol} 处于下跌趋势`,
-      });
-    }
-
-    // 如果没有明确信号，返回中性
-    if (signals.length === 0) {
-      signals.push({
-        type: "neutral",
-        indicator: "综合",
-        confidence: 0.5,
-        description: `${symbol} 信号混杂，方向不明`,
-      });
-    }
-
-    return signals;
+    return { content };
   }
 
   /**
-   * 计算综合评分
+   * 处理一般技术查询
    */
-  private calculateCompositeScore(indicators: TechnicalIndicators): number {
-    let score = 50; // 基准分
-
-    // RSI 贡献 (-20 to +20)
-    score += (50 - indicators.rsi) * 0.4;
-
-    // 趋势贡献
-    if (indicators.trend === "up") score += 15;
-    if (indicators.trend === "down") score -= 15;
-
-    // 波动率调整（高波动降低信心）
-    score -= indicators.volatility * 0.2;
-
-    return Math.max(0, Math.min(100, Math.round(score)));
+  private async handleGeneralTechnicalQuery(message: string): Promise<ChatResponse> {
+    const symbol = this.extractSymbol(message) || 'BTC';
+    
+    // 默认返回基础技术指标
+    return this.handleComprehensiveAnalysis(symbol);
   }
 
-  // ==================== 公共方法 ====================
+  // ========== 辅助方法 ==========
 
-  /**
-   * 分析单个币种
-   */
-  async analyzeSymbol(symbol: string, coinId?: string, days: string = "14"): Promise<TechnicalAnalysis> {
-    const id = coinId || this.coinIdMap[symbol.toUpperCase()];
-    if (!id) {
-      throw new Error(`未知币种: ${symbol}`);
-    }
-
-    // 获取市场图表数据
-    const chartData = await getCoinMarketChart(id, days);
-    const prices = chartData.prices.map(p => p[1]);
-
-    if (prices.length < 14) {
-      throw new Error(`${symbol} 数据点不足`);
-    }
-
-    // 计算指标
-    const rsi = this.calculateRSI(prices);
-    const ma7 = this.calculateSMA(prices, 7);
-    const ma14 = this.calculateSMA(prices, 14);
-    const ma30 = prices.length >= 30 ? this.calculateSMA(prices, 30) : undefined;
-    const volatility = this.calculateVolatility(prices);
-    const trend = this.identifyTrend(prices);
-    const { support, resistance } = this.calculateSupportResistance(prices);
-
-    const indicators: TechnicalIndicators = {
-      rsi,
-      ma7,
-      ma14,
-      ma30,
-      volatility,
-      trend,
-      support,
-      resistance,
-    };
-
-    const signals = this.generateSignals(symbol, indicators, prices);
-
-    return {
-      symbol: symbol.toUpperCase(),
-      indicators,
-      signals,
-      timestamp: new Date(),
-    };
+  private extractSymbol(input: string): string | undefined {
+    const match = input.match(/\b(btc|eth|doge|sol|xrp|ada)\b/i);
+    return match ? match[0].toUpperCase() : undefined;
   }
 
-  /**
-   * 分析多个币种（用于定时任务）
-   */
-  async analyzeMultiple(symbols: string[]): Promise<MultiAssetAnalysis> {
-    const analyses: TechnicalAnalysis[] = [];
-    const prices: Array<{ symbol: string; price: number }> = [];
-
-    for (const symbol of symbols) {
-      try {
-        const analysis = await this.analyzeSymbol(symbol);
-        analyses.push(analysis);
-        // 记录当前价格
-        prices.push({
-          symbol: analysis.symbol,
-          price: analysis.indicators.ma7, // 使用 MA7 作为近似当前价格
-        });
-      } catch (error) {
-        console.error(`[TechAnalyst] Failed to analyze ${symbol}:`, error);
-      }
-      // 添加小延迟避免请求过快
-      await this.delay(500);
-    }
-
-    return {
-      analyses,
-      prices,
-      timestamp: new Date(),
-    };
-  }
-
-  /**
-   * 快速分析 BTC 和 DOGE（每5分钟调用）
-   */
-  async analyzeBTCAndDOGE(): Promise<MultiAssetAnalysis> {
-    return this.analyzeMultiple(["BTC", "DOGE"]);
-  }
-
-  /**
-   * 生成技术指标摘要
-   */
-  generateSummary(analysis: TechnicalAnalysis): string {
-    const { symbol, indicators, signals } = analysis;
-    const compositeScore = this.calculateCompositeScore(indicators);
-
-    const bullishSignals = signals.filter(s => s.type === "buy" || s.type === "strong_buy");
-    const bearishSignals = signals.filter(s => s.type === "sell" || s.type === "strong_sell");
-
-    const trendText = indicators.trend === 'up' ? '上涨' : indicators.trend === 'down' ? '下跌' : '横盘';
-
-    let summary = `[${symbol}] 技术评分: ${compositeScore}/100\n`;
-    summary += `RSI: ${indicators.rsi} | MA7: $${indicators.ma7} | MA14: $${indicators.ma14}\n`;
-    summary += `趋势: ${trendText} | 波动率: ${indicators.volatility}%\n`;
-    summary += `信号: ${bullishSignals.length} 个看涨, ${bearishSignals.length} 个看跌\n`;
-
-    if (signals.length > 0) {
-      summary += `主要信号: ${signals[0].description}`;
-    }
-
-    return summary;
-  }
-
-  // ==================== 实现抽象方法 ====================
-
-  async executeTask<T>(task: AgentTask): Promise<T> {
-    switch (task.type) {
-      case "analyze_symbol": {
-        const { symbol, coinId, days } = task.data as TechAnalysisTask;
-        const result = await this.analyzeSymbol(symbol, coinId, days);
-        return result as T;
-      }
-
-      case "analyze_multiple": {
-        const { symbols } = task.data as { symbols: string[] };
-        const result = await this.analyzeMultiple(symbols);
-        return result as T;
-      }
-
-      case "analyze_btc_doge": {
-        const result = await this.analyzeBTCAndDOGE();
-        return result as T;
-      }
-
-      default:
-        throw new Error(`未知的任务类型: ${task.type}`);
-    }
-  }
-
-  protected async generateResponse(
-    message: string,
-    context?: Record<string, unknown>
-  ): Promise<string> {
-    // 技术分析员主要是数据分析，对话功能简单实现
-    if (message.toLowerCase().includes("analyze") || message.toLowerCase().includes("分析")) {
-      const symbol = message.match(/\b(BTC|DOGE|ETH|SOL|XRP|ADA)\b/i)?.[0] || "BTC";
-      try {
-        const analysis = await this.analyzeSymbol(symbol);
-        return this.generateSummary(analysis);
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : '';
-        if (errorMsg.includes('429')) {
-          return `⏳ API 请求过于频繁，请等待 1-2 分钟后再试。`;
-        }
-        return `抱歉，暂时无法分析 ${symbol}。请稍后再试。`;
-      }
-    }
-
-    return `我是技术分析员，可以帮你分析加密货币的技术指标。让我分析 BTC、DOGE 或其他支持的币种。`;
+  private getRSIStatus(rsi: number): string {
+    if (rsi > 80) return '严重超买';
+    if (rsi > 70) return '超买';
+    if (rsi > 60) return '偏强';
+    if (rsi > 40) return '中性';
+    if (rsi > 30) return '偏弱';
+    if (rsi > 20) return '超卖';
+    return '严重超卖';
   }
 }
 
-// 单例模式导出
+// ========== 单例导出 ==========
+
 let techAnalystInstance: TechnicalAnalyst | null = null;
 
-export function getTechnicalAnalyst(): TechnicalAnalyst {
+export function getTechnicalAnalyst(config?: Partial<AgentConfig>): TechnicalAnalyst {
   if (!techAnalystInstance) {
-    techAnalystInstance = new TechnicalAnalyst();
+    techAnalystInstance = new TechnicalAnalyst(config);
   }
   return techAnalystInstance;
 }
