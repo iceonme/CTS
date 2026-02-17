@@ -26,7 +26,7 @@
 ### 📖 历史参考文档（部分过时）
 | 文档 | 说明 | 状态 |
 |------|------|------|
-| [mvp_functional.md](./mvp_functional.md) | MVP 功能清单 | ⚠️ CFO 已更名为 PA |
+| [mvp_functional.md](./mvp_functional.md) | MVP 功能清单 | ⚠️ CFO 已更名为 PA（小队队长） |
 | [implementation_plan.md](./implementation_plan.md) | 实施计划 | ⚠️ 技术栈已更新 |
 | [system_design.md](./system_design.md) | 原始架构设计 | ⚠️ 架构已演进至 v2.0 |
 
@@ -55,7 +55,7 @@ docs/
 **从 CryptoPulse AI 升级为 TradeMind Framework**
 
 **关键变更**:
-- ✅ **CFO → PA**: 统一命名为 Personal Assistant
+- ✅ **CFO → PA**: 统一命名为 Squad Leader（交易智能体小队队长）
 - ✅ **自研框架**: 不再依赖外部 AI 框架，自研 TradeMind Agent 框架
 - ✅ **三层记忆**: 引入会话/个体/群体三层记忆系统
 - ✅ **产品定位**: 面向非技术用户的"交易智能体小队"

@@ -18,9 +18,9 @@
 ### 三层架构
 
 ```
-用户（唯一对话入口）
+用户（指挥官，可与任何 Agent 对话）
     ↓
-PA (Personal Assistant) - 主智能体
+PA (Squad Leader) - 交易智能体小队队长
     ├─ Bull/Bear 双视角推理
     ├─ Skill 编排与执行
     ├─ 主动任务（盯盘/找机会/异动/报告）
