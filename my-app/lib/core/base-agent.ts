@@ -19,7 +19,6 @@ import type {
   ChatMessage,
   ChatResponse,
   CollectiveMemory,
-  IndividualMemory,
   SessionMemory,
   SkillCall,
   SkillContext,
@@ -27,6 +26,7 @@ import type {
   Workflow,
   WorkflowStep,
 } from './types';
+import { getIndividualMemoryStorage, type IndividualMemoryStorage } from './individual-memory';
 
 // ========== 记忆系统实现 ==========
 
@@ -48,36 +48,7 @@ class SessionMemoryImpl implements SessionMemory {
   }
 }
 
-class IndividualMemoryImpl implements IndividualMemory {
-  stats = {
-    totalAnalyses: 0,
-    totalTrades: 0,
-    accuracyRate: 0,
-    lastActiveAt: Date.now(),
-  };
-  experiences: IndividualMemory['experiences'] = [];
-  userPreferences: Record<string, any> = {};
-
-  addExperience(experience: Omit<IndividualMemory['experiences'][0], 'timestamp'>): void {
-    this.experiences.push({ ...experience, timestamp: Date.now() });
-    this.stats.lastActiveAt = Date.now();
-  }
-
-  updateStats(update: Partial<IndividualMemory['stats']>): void {
-    this.stats = { ...this.stats, ...update, lastActiveAt: Date.now() };
-  }
-
-  getExperiences(filter?: { type?: string; limit?: number }): IndividualMemory['experiences'] {
-    let result = this.experiences;
-    if (filter?.type) {
-      result = result.filter(e => e.type === filter.type);
-    }
-    if (filter?.limit) {
-      result = result.slice(-filter.limit);
-    }
-    return result;
-  }
-}
+// Individual Memory 现在由 IndividualMemoryStorage 提供文件持久化
 
 class CollectiveMemoryImpl implements CollectiveMemory {
   marketFacts: CollectiveMemory['marketFacts'] = [];
@@ -151,9 +122,12 @@ export abstract class BaseAgent {
     this.config = config;
     
     // 初始化记忆系统
+    // - Session: 内存（临时）
+    // - Individual: 文件持久化（成长档案）
+    // - Collective: 内存（未来也可持久化）
     this.memory = {
       session: new SessionMemoryImpl(),
-      individual: new IndividualMemoryImpl(),
+      individual: getIndividualMemoryStorage(config.identity.id),
       collective: new CollectiveMemoryImpl(),
     };
 

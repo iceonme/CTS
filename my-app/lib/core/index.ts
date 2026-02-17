@@ -51,3 +51,15 @@ export {
 export type {
   CollectiveMemoryEntry,
 } from './feed-storage';
+
+export {
+  IndividualMemoryStorage,
+  getIndividualMemoryStorage,
+} from './individual-memory';
+export type {
+  AgentStats,
+  Experience,
+  ExperienceType,
+  Insight,
+  UserPreferences,
+} from './individual-memory';
