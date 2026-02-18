@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { createChart, CandlestickSeries, HistogramSeries, UTCTimestamp, ISeriesApi, IChartApi, LogicalRange } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, UTCTimestamp, ISeriesApi, IChartApi } from 'lightweight-charts';
 
 interface KlineData {
   timestamp: number;
@@ -24,7 +24,6 @@ const INTERVALS = [
 
 const VISIBLE_BARS = 150;
 const LOAD_MORE_BARS = 200;
-const LOAD_THRESHOLD = 30;
 
 function toChartData(data: KlineData[]) {
   return data.map(d => ({
@@ -49,14 +48,14 @@ function ChartContent() {
   const allDataRef = useRef<KlineData[]>([]);
   const isLoadingRef = useRef(false);
   const hasMoreDataRef = useRef(true);
-  const scrollPositionRef = useRef<number | null>(null);
   
   const searchParams = useSearchParams();
   const [interval, setInterval] = useState(() => searchParams.get('interval') || '1m');
   const [loading, setLoading] = useState(false);
-  const [info, setInfo] = useState({ total: 0, start: '', end: '' });
+  const [info, setInfo] = useState({ total: 0, oldest: '', newest: '' });
+  const [canLoadMore, setCanLoadMore] = useState(true);
 
-  // 更新图表数据
+  // 更新图表
   const updateChart = useCallback(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current) return;
     
@@ -66,41 +65,35 @@ function ChartContent() {
     candleSeriesRef.current.setData(toChartData(data) as any);
     volumeSeriesRef.current.setData(toVolumeData(data) as any);
     
-    // 如果是首次加载，滚动到最右侧（最新数据）
-    if (scrollPositionRef.current === null) {
-      chartRef.current?.timeScale().scrollToRealTime();
-    } else {
-      // 恢复滚动位置（加载历史数据后保持当前视图）
-      chartRef.current?.timeScale().scrollToPosition(scrollPositionRef.current, false);
-    }
-    
     setInfo({
       total: data.length,
-      start: new Date(data[0].timestamp).toLocaleDateString('zh-CN'),
-      end: new Date(data[data.length - 1].timestamp).toLocaleDateString('zh-CN'),
+      oldest: new Date(data[0].timestamp).toLocaleDateString('zh-CN'),
+      newest: new Date(data[data.length - 1].timestamp).toLocaleDateString('zh-CN'),
     });
   }, []);
 
-  // 加载最新数据（初始加载）
+  // 加载最新数据
   const loadLatest = useCallback(async (intv: string) => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
     setLoading(true);
     
     try {
-      console.log(`Loading latest ${VISIBLE_BARS} bars for ${intv}...`);
       const res = await fetch(`/api/market/klines/?symbol=BTCUSDT&interval=${intv}&limit=${VISIBLE_BARS}`);
       const result = await res.json();
       
       if (result.success && result.data.length > 0) {
         allDataRef.current = result.data;
         hasMoreDataRef.current = result.data.length >= VISIBLE_BARS;
-        scrollPositionRef.current = null;
+        setCanLoadMore(hasMoreDataRef.current);
         updateChart();
-        console.log(`Loaded ${result.data.length} bars, range: ${new Date(result.data[0].timestamp).toISOString()} ~ ${new Date(result.data[result.data.length-1].timestamp).toISOString()}`);
+        
+        setTimeout(() => {
+          chartRef.current?.timeScale().scrollToRealTime();
+        }, 100);
       }
     } catch (e) {
-      console.error('Load latest error:', e);
+      console.error('Load error:', e);
     } finally {
       isLoadingRef.current = false;
       setLoading(false);
@@ -117,31 +110,24 @@ function ChartContent() {
     const oldestTimestamp = allDataRef.current[0].timestamp;
     
     try {
-      console.log(`Loading history before ${new Date(oldestTimestamp).toISOString()}...`);
       const res = await fetch(
         `/api/market/klines/?symbol=BTCUSDT&interval=${interval}&before=${oldestTimestamp}&limit=${LOAD_MORE_BARS}`
       );
       const result = await res.json();
       
       if (result.success && result.data.length > 0) {
-        // 保存当前滚动位置
-        const timeScale = chartRef.current?.timeScale();
-        scrollPositionRef.current = timeScale?.scrollPosition() ?? null;
-        
-        // 合并数据（新数据在旧数据之前）
         const newData = result.data;
         allDataRef.current = [...newData, ...allDataRef.current];
         
-        // 如果返回的数据少于请求数量，说明没有更多历史数据了
         if (newData.length < LOAD_MORE_BARS) {
           hasMoreDataRef.current = false;
         }
+        setCanLoadMore(hasMoreDataRef.current);
         
         updateChart();
-        console.log(`Loaded ${newData.length} historical bars, total: ${allDataRef.current.length}`);
       } else {
         hasMoreDataRef.current = false;
-        console.log('No more historical data');
+        setCanLoadMore(false);
       }
     } catch (e) {
       console.error('Load history error:', e);
@@ -150,16 +136,6 @@ function ChartContent() {
       setLoading(false);
     }
   }, [interval, updateChart]);
-
-  // 处理可见范围变化（拖动加载）
-  const handleVisibleRangeChange = useCallback((range: LogicalRange | null) => {
-    if (!range || isLoadingRef.current) return;
-    
-    // 当用户向左拖动（查看历史）到接近左边界时，加载更多
-    if (range.from < LOAD_THRESHOLD && hasMoreDataRef.current) {
-      loadHistory();
-    }
-  }, [loadHistory]);
 
   // 初始化图表
   useEffect(() => {
@@ -190,9 +166,6 @@ function ChartContent() {
     candleSeriesRef.current = candles;
     volumeSeriesRef.current = volumes;
 
-    // 监听可见范围变化
-    chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
-
     const handleResize = () => {
       if (containerRef.current && chartRef.current) {
         chartRef.current.applyOptions({ width: containerRef.current.clientWidth, height: 520 });
@@ -200,28 +173,24 @@ function ChartContent() {
     };
     window.addEventListener('resize', handleResize);
 
-    // 初始加载
     loadLatest(interval);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [interval, loadLatest, handleVisibleRangeChange]);
+  }, [interval, loadLatest]);
 
-  // 切换周期
   const handleIntervalChange = (val: string) => {
     setInterval(val);
     allDataRef.current = [];
     hasMoreDataRef.current = true;
-    scrollPositionRef.current = null;
+    setCanLoadMore(true);
     
-    // 更新URL
     const url = new URL(window.location.href);
     url.searchParams.set('interval', val);
     window.history.replaceState({}, '', url);
     
-    // 重新加载
     loadLatest(val);
   };
 
@@ -233,10 +202,7 @@ function ChartContent() {
         <div className="mb-4">
           <h1 className="text-2xl font-bold">TradeMind 市场数据</h1>
           <p className="text-gray-400 text-sm">
-            基于 Binance K线数据
-            <span className="ml-2 text-xs text-gray-500">
-              向左拖动加载更多历史数据
-            </span>
+            基于 Binance K线数据（2025年全年）
           </p>
         </div>
 
@@ -260,14 +226,26 @@ function ChartContent() {
               </button>
             ))}
           </div>
-          {loading && (
-            <span className="text-xs text-blue-400 animate-pulse">加载中...</span>
+          <div className="w-px h-6 bg-gray-700" />
+          
+          {/* 加载更多按钮 */}
+          {canLoadMore ? (
+            <button
+              onClick={loadHistory}
+              disabled={loading}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded text-sm flex items-center gap-1"
+            >
+              <span>←</span>
+              <span>{loading ? '加载中...' : '加载历史'}</span>
+            </button>
+          ) : (
+            <span className="text-xs text-gray-500">已加载全部历史</span>
           )}
+          
           {info.total > 0 && (
             <div className="ml-auto text-xs text-gray-400">
-              <span>{info.start} ~ {info.end}</span>
-              <span className="ml-3">{info.total.toLocaleString()} 根{current?.label}K线</span>
-              {!hasMoreDataRef.current && <span className="ml-2 text-gray-600">(已无更多历史)</span>}
+              <span>{info.oldest} → {info.newest}</span>
+              <span className="ml-2">({info.total} 根)</span>
             </div>
           )}
         </div>
@@ -278,8 +256,8 @@ function ChartContent() {
           <h3 className="text-white font-medium mb-2">使用说明</h3>
           <ul className="space-y-1 list-disc list-inside">
             <li>图表默认显示最新的 {VISIBLE_BARS} 根K线（2025年底数据）</li>
-            <li>向左拖动时间轴可加载更多历史数据（回到2025年初）</li>
-            <li>切换周期时会重新加载对应的数据</li>
+            <li>点击"← 加载历史"按钮加载更早的数据（每次 {LOAD_MORE_BARS} 根）</li>
+            <li>可多次点击加载，直到2025年1月1日</li>
             <li>数据库包含 2025年全年 BTCUSDT 1分钟K线（525,601条）</li>
           </ul>
         </div>
