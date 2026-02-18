@@ -3,7 +3,7 @@
  * 首席财务官 - 负责市场分析决策和整体策略
  */
 
-import BaseAgent from "./base";
+import { BaseAgent } from "@/lib/core/base-agent";
 import { getTechnicalAnalyst, type TechnicalAnalyst } from "./tech-analyst";
 import { analyzeWithCFO, analyzeMultipleWithCFO } from "@/lib/cfo/reasoning";
 import { getFeedItems } from "@/lib/feed/publisher";

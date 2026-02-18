@@ -1,8 +1,12 @@
-# TradeMind - 产品愿景文档
+# TradeMind - 产品愿景文档（详细版）
 
 **版本**: v1.0  
 **日期**: 2026-02-17  
-**状态**: 草案
+**状态**: 历史参考
+
+> ⚠️ **注意**: 本文档为详细版产品愿景，部分内容已合并至 [../VISION.md](../VISION.md)。  
+> 核心产品愿景请参见 [../VISION.md](../VISION.md)。  
+> 当前开发任务请参见 [../ROADMAP.md](../ROADMAP.md) 和 [../HANDOVER.md](../HANDOVER.md)。
 
 ---
 
