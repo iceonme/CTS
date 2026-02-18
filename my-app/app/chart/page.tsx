@@ -13,11 +13,6 @@ interface KlineData {
   volume: number;
 }
 
-interface LoadedRange {
-  start: number; // 已加载的最早时间戳
-  end: number;   // 已加载的最晚时间戳
-}
-
 const INTERVALS = [
   { label: '1分', value: '1m', seconds: 60 },
   { label: '5分', value: '5m', seconds: 300 },
@@ -27,17 +22,14 @@ const INTERVALS = [
   { label: '1日', value: '1d', seconds: 86400 },
 ];
 
-const VISIBLE_BARS = 150; // 初始显示的K线数量
-const LOAD_MORE_BARS = 200; // 每次加载的K线数量
-const LOAD_THRESHOLD = 20; // 距离边界多少根K线时触发加载
+const VISIBLE_BARS = 150;
+const LOAD_MORE_BARS = 200;
+const LOAD_THRESHOLD = 30;
 
 function toChartData(data: KlineData[]) {
   return data.map(d => ({
     time: Math.floor(d.timestamp / 1000) as UTCTimestamp,
-    open: d.open,
-    high: d.high,
-    low: d.low,
-    close: d.close,
+    open: d.open, high: d.high, low: d.low, close: d.close,
   }));
 }
 
@@ -54,68 +46,39 @@ function ChartContent() {
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const allDataRef = useRef<Map<number, KlineData>>(new Map());
-  const loadedRangeRef = useRef<LoadedRange | null>(null);
+  const allDataRef = useRef<KlineData[]>([]);
   const isLoadingRef = useRef(false);
+  const hasMoreDataRef = useRef(true);
+  const scrollPositionRef = useRef<number | null>(null);
   
   const searchParams = useSearchParams();
   const [interval, setInterval] = useState(() => searchParams.get('interval') || '1m');
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState({ total: 0, start: '', end: '' });
 
-  // 加载数据（加载更早的历史）
-  const loadHistory = useCallback(async (beforeTimestamp: number, intv: string) => {
-    if (isLoadingRef.current) return;
-    isLoadingRef.current = true;
-    setLoading(true);
+  // 更新图表数据
+  const updateChart = useCallback(() => {
+    if (!candleSeriesRef.current || !volumeSeriesRef.current) return;
     
-    try {
-      // 计算要加载的时间范围
-      const cfg = INTERVALS.find(i => i.value === intv)!;
-      const endTime = beforeTimestamp;
-      const startTime = endTime - (cfg.seconds * LOAD_MORE_BARS * 1000);
-      
-      const res = await fetch(
-        `/api/market/klines?symbol=BTCUSDT&interval=${intv}` +
-        `&end=${new Date(endTime).toISOString()}` +
-        `&limit=${LOAD_MORE_BARS}`
-      );
-      const result = await res.json();
-      
-      if (result.success && result.data.length > 0) {
-        const newData: KlineData[] = result.data;
-        
-        // 合并到全局数据
-        newData.forEach(d => {
-          allDataRef.current.set(d.timestamp, d);
-        });
-        
-        // 更新已加载范围
-        const timestamps = Array.from(allDataRef.current.keys()).sort((a, b) => a - b);
-        loadedRangeRef.current = {
-          start: timestamps[0],
-          end: timestamps[timestamps.length - 1]
-        };
-        
-        // 更新图表
-        const sortedData = timestamps.map(t => allDataRef.current.get(t)!);
-        candleSeriesRef.current?.setData(toChartData(sortedData) as any);
-        volumeSeriesRef.current?.setData(toVolumeData(sortedData) as any);
-        
-        setInfo({
-          total: sortedData.length,
-          start: new Date(sortedData[0].timestamp).toLocaleDateString('zh-CN'),
-          end: new Date(sortedData[sortedData.length - 1].timestamp).toLocaleDateString('zh-CN'),
-        });
-        
-        console.log(`加载了 ${newData.length} 根历史K线，总共 ${sortedData.length} 根`);
-      }
-    } catch (e) {
-      console.error('加载历史数据失败:', e);
-    } finally {
-      isLoadingRef.current = false;
-      setLoading(false);
+    const data = allDataRef.current;
+    if (data.length === 0) return;
+
+    candleSeriesRef.current.setData(toChartData(data) as any);
+    volumeSeriesRef.current.setData(toVolumeData(data) as any);
+    
+    // 如果是首次加载，滚动到最右侧（最新数据）
+    if (scrollPositionRef.current === null) {
+      chartRef.current?.timeScale().scrollToRealTime();
+    } else {
+      // 恢复滚动位置（加载历史数据后保持当前视图）
+      chartRef.current?.timeScale().scrollToPosition(scrollPositionRef.current, false);
     }
+    
+    setInfo({
+      total: data.length,
+      start: new Date(data[0].timestamp).toLocaleDateString('zh-CN'),
+      end: new Date(data[data.length - 1].timestamp).toLocaleDateString('zh-CN'),
+    });
   }, []);
 
   // 加载最新数据（初始加载）
@@ -125,57 +88,78 @@ function ChartContent() {
     setLoading(true);
     
     try {
-      const res = await fetch(
-        `/api/market/klines?symbol=BTCUSDT&interval=${intv}` +
-        `&limit=${VISIBLE_BARS}`
-      );
+      console.log(`Loading latest ${VISIBLE_BARS} bars for ${intv}...`);
+      const res = await fetch(`/api/market/klines/?symbol=BTCUSDT&interval=${intv}&limit=${VISIBLE_BARS}`);
       const result = await res.json();
       
       if (result.success && result.data.length > 0) {
-        const data: KlineData[] = result.data;
-        
-        // 重置数据
-        allDataRef.current.clear();
-        data.forEach(d => allDataRef.current.set(d.timestamp, d));
-        
-        loadedRangeRef.current = {
-          start: data[0].timestamp,
-          end: data[data.length - 1].timestamp
-        };
-        
-        // 设置图表数据
-        candleSeriesRef.current?.setData(toChartData(data) as any);
-        volumeSeriesRef.current?.setData(toVolumeData(data) as any);
-        
-        // 移动到最新数据
-        chartRef.current?.timeScale().scrollToRealTime();
-        
-        setInfo({
-          total: data.length,
-          start: new Date(data[0].timestamp).toLocaleDateString('zh-CN'),
-          end: new Date(data[data.length - 1].timestamp).toLocaleDateString('zh-CN'),
-        });
-        
-        console.log(`初始加载 ${data.length} 根K线`);
+        allDataRef.current = result.data;
+        hasMoreDataRef.current = result.data.length >= VISIBLE_BARS;
+        scrollPositionRef.current = null;
+        updateChart();
+        console.log(`Loaded ${result.data.length} bars, range: ${new Date(result.data[0].timestamp).toISOString()} ~ ${new Date(result.data[result.data.length-1].timestamp).toISOString()}`);
       }
     } catch (e) {
-      console.error('加载最新数据失败:', e);
+      console.error('Load latest error:', e);
     } finally {
       isLoadingRef.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [updateChart]);
 
-  // 处理时间轴变化
-  const handleVisibleRangeChange = useCallback((range: LogicalRange | null) => {
-    if (!range || !loadedRangeRef.current) return;
+  // 加载历史数据
+  const loadHistory = useCallback(async () => {
+    if (isLoadingRef.current || !hasMoreDataRef.current || allDataRef.current.length === 0) return;
     
-    // 如果向左拖动（查看历史），且接近左边界，加载更多
-    if (range.from < LOAD_THRESHOLD) {
-      const currentStart = loadedRangeRef.current.start;
-      loadHistory(currentStart, interval);
+    isLoadingRef.current = true;
+    setLoading(true);
+    
+    const oldestTimestamp = allDataRef.current[0].timestamp;
+    
+    try {
+      console.log(`Loading history before ${new Date(oldestTimestamp).toISOString()}...`);
+      const res = await fetch(
+        `/api/market/klines/?symbol=BTCUSDT&interval=${interval}&before=${oldestTimestamp}&limit=${LOAD_MORE_BARS}`
+      );
+      const result = await res.json();
+      
+      if (result.success && result.data.length > 0) {
+        // 保存当前滚动位置
+        const timeScale = chartRef.current?.timeScale();
+        scrollPositionRef.current = timeScale?.scrollPosition() ?? null;
+        
+        // 合并数据（新数据在旧数据之前）
+        const newData = result.data;
+        allDataRef.current = [...newData, ...allDataRef.current];
+        
+        // 如果返回的数据少于请求数量，说明没有更多历史数据了
+        if (newData.length < LOAD_MORE_BARS) {
+          hasMoreDataRef.current = false;
+        }
+        
+        updateChart();
+        console.log(`Loaded ${newData.length} historical bars, total: ${allDataRef.current.length}`);
+      } else {
+        hasMoreDataRef.current = false;
+        console.log('No more historical data');
+      }
+    } catch (e) {
+      console.error('Load history error:', e);
+    } finally {
+      isLoadingRef.current = false;
+      setLoading(false);
     }
-  }, [interval, loadHistory]);
+  }, [interval, updateChart]);
+
+  // 处理可见范围变化（拖动加载）
+  const handleVisibleRangeChange = useCallback((range: LogicalRange | null) => {
+    if (!range || isLoadingRef.current) return;
+    
+    // 当用户向左拖动（查看历史）到接近左边界时，加载更多
+    if (range.from < LOAD_THRESHOLD && hasMoreDataRef.current) {
+      loadHistory();
+    }
+  }, [loadHistory]);
 
   // 初始化图表
   useEffect(() => {
@@ -211,16 +195,13 @@ function ChartContent() {
 
     const handleResize = () => {
       if (containerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({ 
-          width: containerRef.current.clientWidth, 
-          height: 520 
-        });
+        chartRef.current.applyOptions({ width: containerRef.current.clientWidth, height: 520 });
       }
     };
     window.addEventListener('resize', handleResize);
 
     // 初始加载
-    setTimeout(() => loadLatest(interval), 100);
+    loadLatest(interval);
 
     return () => {
       window.removeEventListener('resize', handleResize);
@@ -231,8 +212,9 @@ function ChartContent() {
   // 切换周期
   const handleIntervalChange = (val: string) => {
     setInterval(val);
-    allDataRef.current.clear();
-    loadedRangeRef.current = null;
+    allDataRef.current = [];
+    hasMoreDataRef.current = true;
+    scrollPositionRef.current = null;
     
     // 更新URL
     const url = new URL(window.location.href);
@@ -253,7 +235,7 @@ function ChartContent() {
           <p className="text-gray-400 text-sm">
             基于 Binance K线数据
             <span className="ml-2 text-xs text-gray-500">
-              拖动时间轴加载更多历史数据
+              向左拖动加载更多历史数据
             </span>
           </p>
         </div>
@@ -283,8 +265,9 @@ function ChartContent() {
           )}
           {info.total > 0 && (
             <div className="ml-auto text-xs text-gray-400">
-              <span>已加载: {info.start} ~ {info.end}</span>
+              <span>{info.start} ~ {info.end}</span>
               <span className="ml-3">{info.total.toLocaleString()} 根{current?.label}K线</span>
+              {!hasMoreDataRef.current && <span className="ml-2 text-gray-600">(已无更多历史)</span>}
             </div>
           )}
         </div>
@@ -294,8 +277,8 @@ function ChartContent() {
         <div className="mt-4 bg-gray-800 rounded-lg p-4 text-sm text-gray-400">
           <h3 className="text-white font-medium mb-2">使用说明</h3>
           <ul className="space-y-1 list-disc list-inside">
-            <li>图表默认显示最近的 {VISIBLE_BARS} 根K线</li>
-            <li>向左拖动时间轴可加载更多历史数据</li>
+            <li>图表默认显示最新的 {VISIBLE_BARS} 根K线（2025年底数据）</li>
+            <li>向左拖动时间轴可加载更多历史数据（回到2025年初）</li>
             <li>切换周期时会重新加载对应的数据</li>
             <li>数据库包含 2025年全年 BTCUSDT 1分钟K线（525,601条）</li>
           </ul>

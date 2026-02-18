@@ -1,35 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 
-// 动态导入 duckdb，避免 webpack 打包问题
-async function queryKlines(params: {
-  symbol: string;
-  interval: string;
-  start?: Date;
-  end?: Date;
-  limit: number;
-}) {
+// 获取最新的N条1分钟K线（用于初始加载）
+async function queryLatest1m(symbol: string, limit: number) {
   const { default: duckdb } = await import('duckdb');
-  
   const dbPath = path.join(process.cwd(), 'data', 'market-v2.db');
   const db = new duckdb.Database(dbPath);
   
-  const { symbol, interval, start, end, limit } = params;
-  
-  let sql = `
+  // 先按时间倒序取最新limit条，再正序返回
+  const sql = `
     SELECT timestamp, open, high, low, close, volume
-    FROM klines 
-    WHERE symbol = '${symbol}' AND interval = '${interval}'
+    FROM (
+      SELECT timestamp, open, high, low, close, volume
+      FROM klines 
+      WHERE symbol = '${symbol}' AND interval = '1m'
+      ORDER BY timestamp DESC
+      LIMIT ${limit}
+    )
+    ORDER BY timestamp ASC
   `;
-  
-  if (start) {
-    sql += ` AND timestamp >= ${start.getTime()}`;
-  }
-  if (end) {
-    sql += ` AND timestamp <= ${end.getTime()}`;
-  }
-  
-  sql += ` ORDER BY timestamp ASC LIMIT ${limit}`;
 
   return new Promise((resolve, reject) => {
     db.all(sql, (err: Error | null, rows: any[]) => {
@@ -40,49 +29,112 @@ async function queryKlines(params: {
   });
 }
 
-// 从1分钟数据聚合 - 使用子查询获取首尾的open/close
-async function aggregateFrom1m(params: {
-  symbol: string;
-  intervalSeconds: number;
-  start?: Date;
-  end?: Date;
-  limit: number;
-}) {
+// 获取指定时间范围前的1分钟K线（用于加载历史）
+async function queryHistory1m(symbol: string, beforeTimestamp: number, limit: number) {
   const { default: duckdb } = await import('duckdb');
-  
   const dbPath = path.join(process.cwd(), 'data', 'market-v2.db');
   const db = new duckdb.Database(dbPath);
   
-  const { symbol, intervalSeconds, start, end, limit } = params;
-  
-  // 计算桶大小（毫秒）
-  const bucketMs = intervalSeconds * 1000;
-  
-  // 使用窗口函数获取每个桶的第一条和最后一条
-  // 注意：DuckDB需要CAST来确保整数除法
-  let sql = `
-    WITH bucketed AS (
-      SELECT 
-        CAST(timestamp / ${bucketMs} AS BIGINT) * ${bucketMs} as bucket_time,
-        timestamp, open, high, low, close, volume,
-        ROW_NUMBER() OVER (PARTITION BY CAST(timestamp / ${bucketMs} AS BIGINT) ORDER BY timestamp ASC) as rn_asc,
-        ROW_NUMBER() OVER (PARTITION BY CAST(timestamp / ${bucketMs} AS BIGINT) ORDER BY timestamp DESC) as rn_desc
+  const sql = `
+    SELECT timestamp, open, high, low, close, volume
+    FROM (
+      SELECT timestamp, open, high, low, close, volume
       FROM klines 
       WHERE symbol = '${symbol}' AND interval = '1m'
-      ${start ? `AND timestamp >= ${start.getTime()}` : ''}
-      ${end ? `AND timestamp <= ${end.getTime()}` : ''}
+        AND timestamp < ${beforeTimestamp}
+      ORDER BY timestamp DESC
+      LIMIT ${limit}
     )
-    SELECT 
-      bucket_time,
-      MAX(CASE WHEN rn_asc = 1 THEN open END) as open,
-      MAX(high) as high,
-      MIN(low) as low,
-      MAX(CASE WHEN rn_desc = 1 THEN close END) as close,
-      SUM(volume) as volume
-    FROM bucketed
-    GROUP BY bucket_time
+    ORDER BY timestamp ASC
+  `;
+
+  return new Promise((resolve, reject) => {
+    db.all(sql, (err: Error | null, rows: any[]) => {
+      db.close();
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+}
+
+// 获取最新的聚合K线（用于初始加载）
+async function aggregateLatest(symbol: string, intervalSeconds: number, limit: number) {
+  const { default: duckdb } = await import('duckdb');
+  const dbPath = path.join(process.cwd(), 'data', 'market-v2.db');
+  const db = new duckdb.Database(dbPath);
+  
+  const bucketMs = intervalSeconds * 1000;
+  
+  // 先聚合，再取最新的limit条
+  const sql = `
+    SELECT bucket_time as timestamp, open, high, low, close, volume
+    FROM (
+      SELECT 
+        bucket_time,
+        MAX(CASE WHEN rn_asc = 1 THEN open END) as open,
+        MAX(high) as high,
+        MIN(low) as low,
+        MAX(CASE WHEN rn_desc = 1 THEN close END) as close,
+        SUM(volume) as volume
+      FROM (
+        SELECT 
+          CAST(timestamp / ${bucketMs} AS BIGINT) * ${bucketMs} as bucket_time,
+          open, high, low, close, volume,
+          ROW_NUMBER() OVER (PARTITION BY CAST(timestamp / ${bucketMs} AS BIGINT) ORDER BY timestamp ASC) as rn_asc,
+          ROW_NUMBER() OVER (PARTITION BY CAST(timestamp / ${bucketMs} AS BIGINT) ORDER BY timestamp DESC) as rn_desc
+        FROM klines 
+        WHERE symbol = '${symbol}' AND interval = '1m'
+      )
+      GROUP BY bucket_time
+      ORDER BY bucket_time DESC
+      LIMIT ${limit}
+    )
     ORDER BY bucket_time ASC
-    LIMIT ${limit}
+  `;
+
+  return new Promise((resolve, reject) => {
+    db.all(sql, (err: Error | null, rows: any[]) => {
+      db.close();
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+}
+
+// 获取指定时间前的聚合K线（用于加载历史）
+async function aggregateHistory(symbol: string, intervalSeconds: number, beforeTimestamp: number, limit: number) {
+  const { default: duckdb } = await import('duckdb');
+  const dbPath = path.join(process.cwd(), 'data', 'market-v2.db');
+  const db = new duckdb.Database(dbPath);
+  
+  const bucketMs = intervalSeconds * 1000;
+  const beforeBucket = Math.floor(beforeTimestamp / bucketMs) * bucketMs;
+  
+  const sql = `
+    SELECT bucket_time as timestamp, open, high, low, close, volume
+    FROM (
+      SELECT 
+        bucket_time,
+        MAX(CASE WHEN rn_asc = 1 THEN open END) as open,
+        MAX(high) as high,
+        MIN(low) as low,
+        MAX(CASE WHEN rn_desc = 1 THEN close END) as close,
+        SUM(volume) as volume
+      FROM (
+        SELECT 
+          CAST(timestamp / ${bucketMs} AS BIGINT) * ${bucketMs} as bucket_time,
+          open, high, low, close, volume,
+          ROW_NUMBER() OVER (PARTITION BY CAST(timestamp / ${bucketMs} AS BIGINT) ORDER BY timestamp ASC) as rn_asc,
+          ROW_NUMBER() OVER (PARTITION BY CAST(timestamp / ${bucketMs} AS BIGINT) ORDER BY timestamp DESC) as rn_desc
+        FROM klines 
+        WHERE symbol = '${symbol}' AND interval = '1m'
+          AND timestamp < ${beforeBucket}
+      )
+      GROUP BY bucket_time
+      ORDER BY bucket_time DESC
+      LIMIT ${limit}
+    )
+    ORDER BY bucket_time ASC
   `;
 
   return new Promise((resolve, reject) => {
@@ -100,46 +152,36 @@ export async function GET(request: NextRequest) {
     
     const symbol = searchParams.get('symbol') || 'BTCUSDT';
     const interval = searchParams.get('interval') || '1m';
-    const start = searchParams.get('start');
-    const end = searchParams.get('end');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '500'), 1000);
+    const before = searchParams.get('before');  // 加载此时间戳之前的数据
+    const limit = Math.min(parseInt(searchParams.get('limit') || '150'), 500);
 
     // 周期映射（秒）
     const intervalMap: Record<string, number> = {
-      '1m': 60,
-      '5m': 300,
-      '15m': 900,
-      '1h': 3600,
-      '4h': 14400,
-      '1d': 86400,
+      '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400,
     };
-
     const intervalSeconds = intervalMap[interval] || 60;
     
     let data;
     
-    // 如果是1分钟线，直接查询；否则从1分钟聚合
     if (interval === '1m') {
-      data = await queryKlines({
-        symbol,
-        interval: '1m',
-        start: start ? new Date(start) : undefined,
-        end: end ? new Date(end) : undefined,
-        limit
-      });
+      // 1分钟线
+      if (before) {
+        data = await queryHistory1m(symbol, parseInt(before), limit);
+      } else {
+        data = await queryLatest1m(symbol, limit);
+      }
     } else {
-      data = await aggregateFrom1m({
-        symbol,
-        intervalSeconds,
-        start: start ? new Date(start) : undefined,
-        end: end ? new Date(end) : undefined,
-        limit
-      });
+      // 聚合线
+      if (before) {
+        data = await aggregateHistory(symbol, intervalSeconds, parseInt(before), limit);
+      } else {
+        data = await aggregateLatest(symbol, intervalSeconds, limit);
+      }
     }
 
     // 转换字段名
     const serializedData = (data as any[]).map(row => ({
-      timestamp: Number(row.timestamp || row.bucket_time),
+      timestamp: Number(row.timestamp),
       open: row.open,
       high: row.high,
       low: row.low,
@@ -154,6 +196,7 @@ export async function GET(request: NextRequest) {
         symbol, 
         interval, 
         count: serializedData.length,
+        before: before || null,
         start: serializedData[0]?.timestamp,
         end: serializedData[serializedData.length - 1]?.timestamp
       }
