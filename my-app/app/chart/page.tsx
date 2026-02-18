@@ -178,9 +178,18 @@ function ChartContent() {
 
   // 初始加载
   useEffect(() => {
+    console.log('Initial load for interval:', interval);
     loadLatest(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  
+  // 当interval变化时重新加载
+  useEffect(() => {
+    if (data.length === 0) {
+      console.log('Interval changed, loading:', interval);
+      loadLatest(interval);
+    }
+  }, [interval]);
 
   const current = INTERVALS.find(i => i.value === interval);
   const oldestDate = data.length > 0 ? new Date(data[0].timestamp).toLocaleDateString('zh-CN') : '-';
