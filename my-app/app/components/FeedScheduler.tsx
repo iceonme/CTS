@@ -1,27 +1,37 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { startFeedScheduler, stopFeedScheduler } from "@/lib/feed/publisher";
 
 /**
  * Feed 定时任务调度器
- * 在应用启动时自动启动，卸载时停止
+ * 只在服务端运行，客户端不执行
  */
 export default function FeedScheduler() {
   const initialized = useRef(false);
 
   useEffect(() => {
+    // 只在服务端运行（Node.js 环境）
+    if (typeof window !== 'undefined') {
+      // 客户端：不启动定时任务
+      return;
+    }
+    
     if (!initialized.current) {
       initialized.current = true;
-      console.log("[FeedScheduler] 启动定时任务...");
-      startFeedScheduler();
+      // 动态导入，避免客户端打包问题
+      import("@/lib/feed/publisher").then(({ startFeedScheduler }) => {
+        console.log("[FeedScheduler] 启动定时任务...");
+        startFeedScheduler();
+      });
     }
 
     return () => {
-      console.log("[FeedScheduler] 停止定时任务...");
-      stopFeedScheduler();
+      import("@/lib/feed/publisher").then(({ stopFeedScheduler }) => {
+        console.log("[FeedScheduler] 停止定时任务...");
+        stopFeedScheduler();
+      });
     };
   }, []);
 
-  return null; // 这是一个逻辑组件，不渲染任何 UI
+  return null;
 }

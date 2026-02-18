@@ -8,16 +8,34 @@
  * - preferences.json: 用户偏好
  */
 
-import fs from 'fs';
-import path from 'path';
 import type { IndividualMemory } from './types';
 
-// 存储目录
-const DATA_DIR = process.env.DATA_DIR || './data';
+// 只在服务端使用 fs
+let fs: typeof import('fs') | null = null;
+let path: typeof import('path') | null = null;
 
-function ensureDir(dir: string): void {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+// 动态导入 fs（只在 Node.js 环境）
+async function getFs() {
+  if (!fs && typeof window === 'undefined') {
+    fs = await import('fs');
+  }
+  return fs;
+}
+
+async function getPath() {
+  if (!path && typeof window === 'undefined') {
+    path = await import('path');
+  }
+  return path;
+}
+
+// 存储目录
+const DATA_DIR = typeof process !== 'undefined' ? (process.env.DATA_DIR || './data') : './data';
+
+async function ensureDir(dir: string): Promise<void> {
+  const fsModule = await getFs();
+  if (fsModule && !fsModule.existsSync(dir)) {
+    fsModule.mkdirSync(dir, { recursive: true });
   }
 }
 
