@@ -44,8 +44,9 @@ export interface SkillParameter {
 export type SkillHandler = (params: any, context: SkillContext) => Promise<any>;
 
 export interface SkillContext {
-  agentId: string;
+  agent: AgentIdentity;
   memory: AgentMemory;
+  now?: number; // 注入当前上下文时间（如模拟回放的时间）
   callHistory: SkillCall[];
 }
 
@@ -66,7 +67,7 @@ export interface SessionMemory {
     timestamp: number;
   }>;
   context: Record<string, any>;  // 本轮会话的临时上下文
-  
+
   addMessage(role: 'user' | 'assistant' | 'system' | 'skill', content: string): void;
   getRecent(limit: number): Array<{ role: string; content: string; timestamp: number }>;
   clear(): void;
@@ -81,14 +82,14 @@ export interface IndividualMemory {
     lastActiveAt: number;
   };
   experiences: Array<{
-    type: 'analysis' | 'trade' | 'prediction' | 'conversation';
+    type: 'analysis' | 'trade' | 'prediction' | 'conversation' | 'feed_published';
     content: string;
-    result: 'success' | 'failure' | 'pending';
+    result: 'success' | 'failure' | 'pending' | 'neutral';
     timestamp: number;
     metadata?: Record<string, any>;
   }>;
   userPreferences: Record<string, any>;  // 从这个 Agent 角度观察到的用户偏好
-  
+
   addExperience(experience: Omit<IndividualMemory['experiences'][0], 'timestamp'>): void;
   updateStats(update: Partial<IndividualMemory['stats']>): void;
   getExperiences(filter?: { type?: string; limit?: number }): IndividualMemory['experiences'];
@@ -104,19 +105,19 @@ export interface CollectiveMemory {
     timestamp: number;
     expiresAt?: number;    // 某些事实会过期
   }>;
-  
+
   agentInsights: Record<string, Array<{      // 每个 Agent 的洞察
     content: string;
     timestamp: number;
   }>>;
-  
+
   lessons: Array<{         // 集体学到的教训
     event: string;
     lesson: string;
     relatedAgents: string[];
     timestamp: number;
   }>;
-  
+
   addFact(fact: Omit<CollectiveMemory['marketFacts'][0], 'timestamp'>): void;
   addInsight(agentId: string, insight: string): void;
   addLesson(lesson: Omit<CollectiveMemory['lessons'][0], 'timestamp'>): void;
@@ -132,6 +133,7 @@ export interface AgentMemory {
 // ========== Agent 配置定义 ==========
 
 export type AutonomyLevel = 'high' | 'medium' | 'low';
+export type AgentStatus = 'idle' | 'analyzing' | 'deciding' | 'executing' | 'error' | 'completed';
 
 export interface AgentCapabilities {
   baseSkills: string[];           // 预制挂载的 skills（不能减少）
@@ -171,9 +173,9 @@ export interface ChatMessage {
 }
 
 export interface ChatContext {
-  sessionId: string;
-  userId?: string;
-  previousMessages?: ChatMessage[];
+  sessionId?: string;
+  now?: number; // 注入当前上下文时间
+  history?: ChatMessage[];
 }
 
 export interface ChatResponse {

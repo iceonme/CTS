@@ -1,10 +1,5 @@
-/**
- * Polymarket Analyst Agent
- * 预测市场分析专员 - 监控 Polymarket 等预测市场数据
- */
-
-import BaseAgent from "./base";
-import type { AgentTask, IntelligenceItem } from "@/lib/types";
+import { BaseAgent } from "@/lib/core/base-agent";
+import type { AgentConfig, ChatContext, ChatResponse } from "@/lib/core/types";
 
 // Polymarket 事件数据结构
 interface PolymarketEvent {
@@ -41,17 +36,28 @@ interface PolymarketTask {
   limit?: number;
 }
 
-export class PolymarketAgent extends BaseAgent {
-  private apiBaseUrl = "https://api.polymarket.com";
-  private lastFetchTime: Date | null = null;
-  private cachedEvents: PolymarketEvent[] = [];
+// 注意：新框架下 IntelligenceItem 已由 Feed 取代，这里为了兼容暂时保留
+interface IntelligenceItem {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  symbol: string;
+  timestamp: Date;
+  importance: string;
+  data: any;
+}
 
-  constructor() {
-    super({
-      name: "Polymarket专员",
-      role: "prediction-analyst",
-      systemPrompt: `你是 Polymarket 预测市场分析专员，专注于监控预测市场数据。
-
+const POLYMARKET_CONFIG: AgentConfig = {
+  identity: {
+    id: "polymarket-analyst",
+    name: "Polymarket专员",
+    role: "prediction-analyst",
+    personality: "专注、客观、对概率敏感",
+    background: "专注于监控预测市场数据，识别重要趋势并评估对加密市场的潜在影响",
+  },
+  prompts: {
+    system: `你是 Polymarket 预测市场分析专员，专注于监控预测市场数据。
 你的职责：
 1. 监控 Polymarket 上与加密货币相关的事件
 2. 分析市场预测概率变化，识别重要趋势
@@ -69,6 +75,39 @@ export class PolymarketAgent extends BaseAgent {
 - 24小时内的概率变化
 - 交易量和流动性数据
 - 对加密市场的潜在影响评估`,
+    constraints: [
+      "保持客观中立",
+      "基于数据提供概率评估",
+      "及时报告重大情绪转变"
+    ],
+  },
+  capabilities: {
+    baseSkills: ["fetch_events", "analyze_event", "crypto_related_scan"],
+    extendableSkills: [],
+    memoryAccess: {
+      session: true,
+      individual: true,
+      collective: true,
+    },
+  },
+  behavior: {
+    autonomy: "medium",
+    outOfScopeStrategy: "suggest_pa",
+    proactiveEnabled: true,
+    canUseDynamicSkills: false,
+  },
+};
+
+export class PolymarketAgent extends BaseAgent {
+  private apiBaseUrl = "https://api.polymarket.com";
+  private lastFetchTime: Date | null = null;
+  private cachedEvents: PolymarketEvent[] = [];
+
+  constructor(config?: Partial<AgentConfig>) {
+    super({
+      ...POLYMARKET_CONFIG,
+      ...config,
+      identity: { ...POLYMARKET_CONFIG.identity, ...config?.identity },
     });
   }
 
@@ -185,11 +224,11 @@ export class PolymarketAgent extends BaseAgent {
   async scanCryptoRelatedEvents(): Promise<PredictionAnalysis[]> {
     const events = await this.fetchActiveEvents(20);
     const cryptoEvents = events.filter(
-      e => e.category === "crypto" || 
-           e.title.toLowerCase().includes("btc") ||
-           e.title.toLowerCase().includes("eth") ||
-           e.title.toLowerCase().includes("bitcoin") ||
-           e.title.toLowerCase().includes("etf")
+      e => e.category === "crypto" ||
+        e.title.toLowerCase().includes("btc") ||
+        e.title.toLowerCase().includes("eth") ||
+        e.title.toLowerCase().includes("bitcoin") ||
+        e.title.toLowerCase().includes("etf")
     );
 
     return cryptoEvents.map(event => this.analyzeEvent(event));
@@ -200,7 +239,7 @@ export class PolymarketAgent extends BaseAgent {
    */
   async generateIntelligence(): Promise<IntelligenceItem[]> {
     const analyses = await this.scanCryptoRelatedEvents();
-    
+
     return analyses.map(analysis => ({
       id: `polymarket-${analysis.eventId}-${Date.now()}`,
       type: "sentiment_shift", // 使用现有类型
@@ -225,10 +264,10 @@ export class PolymarketAgent extends BaseAgent {
   private formatAnalysisContent(analysis: PredictionAnalysis): string {
     const trendEmoji = analysis.trend === "rising" ? "📈" : analysis.trend === "falling" ? "📉" : "➡️";
     const confidenceStars = "⭐".repeat(Math.ceil(analysis.confidence * 5));
-    
+
     return `${trendEmoji} **${analysis.topOutcome}**\n` +
-           `置信度: ${confidenceStars} (${(analysis.confidence * 100).toFixed(0)}%)\n` +
-           `24h 交易量: $${this.formatNumber(analysis.volume24h)}`;
+      `置信度: ${confidenceStars} (${(analysis.confidence * 100).toFixed(0)}%)\n` +
+      `24h 交易量: $${this.formatNumber(analysis.volume24h)}`;
   }
 
   /**
@@ -241,17 +280,17 @@ export class PolymarketAgent extends BaseAgent {
 
     const criticalCount = analyses.filter(a => a.significance === "critical").length;
     const highCount = analyses.filter(a => a.significance === "high").length;
-    
+
     let summary = `🔮 **Polymarket 预测市场情报**\n\n`;
     summary += `监控到 ${analyses.length} 个加密相关事件\n`;
     summary += `🔴 高重要性: ${criticalCount} 个\n`;
     summary += `🟠 中高重要性: ${highCount} 个\n\n`;
-    
+
     // 重要事件详情
     const topEvents = analyses
       .filter(a => a.significance === "critical" || a.significance === "high")
       .slice(0, 3);
-    
+
     if (topEvents.length > 0) {
       summary += "**重点事件:**\n";
       topEvents.forEach(event => {
@@ -265,7 +304,44 @@ export class PolymarketAgent extends BaseAgent {
 
   // ==================== 实现抽象方法 ====================
 
-  async executeTask<T>(task: AgentTask): Promise<T> {
+  /**
+   * 主对话入口
+   */
+  async chat(message: string, context?: ChatContext): Promise<ChatResponse> {
+    this.memory.session.addMessage('user', message);
+    const lowerMsg = message.toLowerCase();
+
+    // 获取最新分析
+    const analyses = await this.scanCryptoRelatedEvents();
+    let content = '';
+
+    // 特定事件查询
+    if (lowerMsg.includes("btc") || lowerMsg.includes("bitcoin")) {
+      const btcEvents = analyses.filter(a =>
+        a.eventTitle.toLowerCase().includes("btc") ||
+        a.eventTitle.toLowerCase().includes("bitcoin")
+      );
+      content = btcEvents.length > 0 ? this.generateSummary(btcEvents) : "暂未发现 BTC 相关预测事件。";
+    } else if (lowerMsg.includes("eth") || lowerMsg.includes("ethereum")) {
+      const ethEvents = analyses.filter(a =>
+        a.eventTitle.toLowerCase().includes("eth")
+      );
+      content = ethEvents.length > 0 ? this.generateSummary(ethEvents) : "暂未发现 ETH 相关预测事件。";
+    } else if (lowerMsg.includes("etf")) {
+      const etfEvents = analyses.filter(a =>
+        a.eventTitle.toLowerCase().includes("etf")
+      );
+      content = etfEvents.length > 0 ? this.generateSummary(etfEvents) : "暂未发现 ETF 相关预测事件。";
+    } else {
+      content = this.generateSummary(analyses);
+    }
+
+    this.memory.session.addMessage('assistant', content);
+    return { content };
+  }
+
+  // 这里的 executeTask 在新架构中通过 Skill 实现，暂时保留原逻辑以防外部调用，但后续应迁移至 SkillRegistry
+  async executeTask<T>(task: any): Promise<T> {
     const data = task.data as PolymarketTask;
 
     switch (data.type) {
@@ -289,49 +365,6 @@ export class PolymarketAgent extends BaseAgent {
       default:
         throw new Error(`未知的任务类型: ${data.type}`);
     }
-  }
-
-  protected async generateResponse(
-    message: string,
-    context?: Record<string, unknown>
-  ): Promise<string> {
-    const lowerMsg = message.toLowerCase();
-
-    // 获取最新分析
-    const analyses = await this.scanCryptoRelatedEvents();
-
-    // 特定事件查询
-    if (lowerMsg.includes("btc") || lowerMsg.includes("bitcoin")) {
-      const btcEvents = analyses.filter(a => 
-        a.eventTitle.toLowerCase().includes("btc") || 
-        a.eventTitle.toLowerCase().includes("bitcoin")
-      );
-      if (btcEvents.length > 0) {
-        return this.generateSummary(btcEvents);
-      }
-    }
-
-    if (lowerMsg.includes("eth") || lowerMsg.includes("ethereum")) {
-      const ethEvents = analyses.filter(a => 
-        a.eventTitle.toLowerCase().includes("eth")
-      );
-      if (ethEvents.length > 0) {
-        return this.generateSummary(ethEvents);
-      }
-    }
-
-    // ETF 相关
-    if (lowerMsg.includes("etf")) {
-      const etfEvents = analyses.filter(a => 
-        a.eventTitle.toLowerCase().includes("etf")
-      );
-      if (etfEvents.length > 0) {
-        return this.generateSummary(etfEvents);
-      }
-    }
-
-    // 默认返回全部摘要
-    return this.generateSummary(analyses);
   }
 }
 

@@ -5,7 +5,7 @@
  * 演示正确的 PA 架构：LLM + Skills
  */
 
-import { getPAAgent } from "@/lib/agents/pa-agent";
+import { getPA } from "@/lib/agents/pa";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
@@ -20,10 +20,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 获取 PA Agent
-    const pa = getPAAgent();
-    
-    // PA 处理消息（通过 LLM 决策，调用 Skills）
+    // 获取 PA Agent (新框架版本)
+    const pa = getPA();
+
+    // PA 处理消息
     const result = await pa.chat(message);
 
     return NextResponse.json(result);

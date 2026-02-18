@@ -9,15 +9,15 @@
  * 5. 同时支持用户对话 (chat) 和自动决策 (processFeed)
  */
 
-import { BaseAgent } from '@/lib/core/base-agent';
-import { feedBus, createFeed, type Feed, type FeedImportance } from '@/lib/core/feed';
-import { getCollectiveMemoryStorage, type CollectiveMemoryEntry } from '@/lib/core/feed-storage';
+import { BaseAgent } from '../core/base-agent';
+import { feedBus, createFeed, type Feed, type FeedImportance } from '../core/feed';
+import { getCollectiveMemoryStorage, type CollectiveMemoryEntry } from '../core/feed-storage';
 import type {
   AgentConfig,
   ChatContext,
   ChatResponse,
   SkillContext,
-} from '@/lib/core/types';
+} from '../core/types';
 
 // ========== PA 决策输出类型 ==========
 
@@ -33,6 +33,7 @@ export interface ThoughtProcess {
   risk_assessment: string;  // 风险评估
   synthesis: string;        // 综合结论
   risk_veto: boolean;       // 风控是否否决
+  market_regime: MarketRegime; // 添加此字段
 }
 
 export interface ToolCall {
@@ -183,10 +184,10 @@ export class PA extends BaseAgent {
   }
 
   private shouldProcessFeed(feed: Feed): boolean {
-    // 自动处理：critical/high 重要性，或 risk 类型
-    if (feed.importance === 'critical') return true;
-    if (feed.importance === 'high' && feed.type === 'signal') return true;
-    if (feed.type === 'risk') return true;
+    // 自动处理：critical/high 重要性，或特定的分析信号
+    if (feed.importance === 'critical' || feed.importance === 'high') return true;
+    if (feed.type === 'analysis' || feed.type === 'risk') return true;
+    if (feed.from === 'tech-analyst') return true; // 特别关注技术分析员
     return false;
   }
 
@@ -207,6 +208,7 @@ export class PA extends BaseAgent {
 
     // === OODA: Decide (决策) ===
     const decision = this.makeDecision(thoughtProcess, relatedFeeds);
+    console.log(`[PA] OODA Step - Decision: ${decision.action} (Confidence: ${decision.confidence})`);
 
     // === OODA: Act (行动) ===
     // 构建 tool_call
@@ -232,6 +234,7 @@ export class PA extends BaseAgent {
 
     // 自动执行（如果开启）
     if (this.autoExecute && output.confidence_score >= this.confidenceThreshold) {
+      console.log(`[PA] Threshold reached (${output.confidence_score} >= ${this.confidenceThreshold}). Executing action...`);
       await this.executeDecision(output);
     }
 
@@ -242,16 +245,16 @@ export class PA extends BaseAgent {
 
   private collectRelatedFeeds(triggerFeed: Feed): Feed[] {
     const symbol = (triggerFeed.data as any)?.symbol;
-    
+
     // 获取最近 1 小时的相关 Feed
     const since = Date.now() - 60 * 60 * 1000;
     let feeds = feedBus.query({ since, limit: 20 });
-    
+
     // 按 symbol 过滤（如果有）
     if (symbol) {
       feeds = feeds.filter(f => (f.data as any)?.symbol === symbol);
     }
-    
+
     // 确保 triggerFeed 包含在内
     if (!feeds.find(f => f.id === triggerFeed.id)) {
       feeds.unshift(triggerFeed);
@@ -277,7 +280,7 @@ export class PA extends BaseAgent {
     const polyFeeds = feeds.filter(f => f.from === 'poly');
     const macroFeeds = feeds.filter(f => f.from === 'macro');
     const riskFeeds = feeds.filter(f => f.from === 'risk' || f.type === 'risk');
-    
+
     // 查询集体记忆（获取历史相关洞察）
     const symbol = (feeds.find(f => (f.data as any)?.symbol)?.data as any)?.symbol;
     let collectiveInsights: CollectiveMemoryEntry[] = [];
@@ -287,7 +290,7 @@ export class PA extends BaseAgent {
     }
 
     // 检查风控否决
-    const riskVeto = riskFeeds.some(f => 
+    const riskVeto = riskFeeds.some(f =>
       (f.data as any)?.level === 'veto' || (f.data as any)?.action === 'pause'
     );
 
@@ -328,11 +331,11 @@ export class PA extends BaseAgent {
     const relevantLessons = collectiveInsights
       .filter(i => i.type === 'lesson')
       .map(i => i.content);
-    
+
     const synthesis = this.generateSynthesis(
-      bullPoints, 
-      bearPoints, 
-      confluenceCount, 
+      bullPoints,
+      bearPoints,
+      confluenceCount,
       regime,
       riskVeto,
       relevantLessons
@@ -343,27 +346,28 @@ export class PA extends BaseAgent {
       regime_assessment: this.describeRegime(regime),
       bull_argument: bullPoints.join('；') || '暂无明确看涨信号',
       bear_argument: bearPoints.join('；') || '暂无明确看跌信号',
-      confluence_analysis: confluenceCount >= 2 
-        ? `多维度共振（${confluenceCount}/3），信号质量较高` 
+      confluence_analysis: confluenceCount >= 2
+        ? `多维度共振（${confluenceCount}/3），信号质量较高`
         : `单一维度信号（${confluenceCount}/3），需谨慎`,
       risk_assessment: riskVeto ? '风控触发，禁止开仓' : '风险可控',
       synthesis,
       risk_veto: riskVeto,
+      market_regime: regime,
     };
   }
 
   private assessMarketRegime(feeds: Feed[]): MarketRegime {
     // 简化版体制判断
-    const hasExtremeRisk = feeds.some(f => 
+    const hasExtremeRisk = feeds.some(f =>
       f.type === 'risk' && (f.data as any)?.level === 'critical'
     );
     if (hasExtremeRisk) return 'extreme_risk';
 
-    const trendFeeds = feeds.filter(f => 
-      f.from === 'technical' && 
+    const trendFeeds = feeds.filter(f =>
+      f.from === 'technical' &&
       ['breakout', 'trend_confirm'].includes((f.data as any)?.signalType)
     );
-    
+
     const upCount = trendFeeds.filter(f => (f.data as any)?.indicators?.trend === 'up').length;
     const downCount = trendFeeds.filter(f => (f.data as any)?.indicators?.trend === 'down').length;
 
@@ -385,24 +389,23 @@ export class PA extends BaseAgent {
   }
 
   private generateSynthesis(
-    bullPoints: string[], 
-    bearPoints: string[], 
+    bullPoints: string[],
+    bearPoints: string[],
     confluence: number,
     regime: MarketRegime,
     riskVeto: boolean,
     lessons: string[] = []
   ): string {
     if (riskVeto) return '风控否决，放弃本次机会';
-    
+
     // 如果有相关历史教训，优先参考
     if (lessons.length > 0) {
-      return `参考历史教训：${lessons[0]}。综合判断：${
-        confluence >= 2 
-          ? (bullPoints.length > bearPoints.length ? '多头占优，但需谨慎' : '风险大于机会')
-          : '信号不足，观望'
-      }`;
+      return `参考历史教训：${lessons[0]}。综合判断：${confluence >= 2
+        ? (bullPoints.length > bearPoints.length ? '多头占优，但需谨慎' : '风险大于机会')
+        : '信号不足，观望'
+        }`;
     }
-    
+
     if (confluence < 2) return '信号强度不足，等待更好的入场时机';
     if (bullPoints.length > bearPoints.length) return '多头占优，趋势确立，可小仓位试探';
     if (bearPoints.length > bullPoints.length) return '空头风险大于机会，观望为主';
@@ -410,17 +413,18 @@ export class PA extends BaseAgent {
   }
 
   private makeDecision(
-    thought: ThoughtProcess, 
+    thought: ThoughtProcess,
     feeds: Feed[]
-  ): { 
-    regime: MarketRegime; 
-    action: PADecision; 
-    confidence: number; 
+  ): {
+    regime: MarketRegime;
+    action: PADecision;
+    confidence: number;
     message: string;
     targetSymbol?: string;
   } {
     // 提取 symbol
-    const symbol = feeds.find(f => (f.data as any)?.symbol)?.data?.symbol as string;
+    const symbol = feeds.find(f => (f.data as any)?.symbol)?.data as any;
+    const symbolStr = symbol?.symbol as string;
 
     // 风控否决
     if (thought.risk_veto) {
@@ -628,9 +632,9 @@ export class PA extends BaseAgent {
   private async handleFeedQuery(params: { limit?: number }): Promise<ChatResponse> {
     // 作为 Skill 执行 - 返回自然语言摘要
     const feeds = await this.executeSkill('feed:get', { limit: params.limit || 5 });
-    
+
     const summary = this.summarizeFeeds(feeds);
-    
+
     return {
       content: `📰 **最新市场情报**\n\n${summary}`,
     };
@@ -642,16 +646,16 @@ export class PA extends BaseAgent {
     }
 
     return feeds.map(f => {
-      const importance = f.importance === 'critical' ? '🔴' : 
-                        f.importance === 'high' ? '🟠' : 
-                        f.importance === 'medium' ? '🟡' : '⚪';
+      const importance = f.importance === 'critical' ? '🔴' :
+        f.importance === 'high' ? '🟠' :
+          f.importance === 'medium' ? '🟡' : '⚪';
       return `${importance} [${f.from}] ${(f.data as any)?.title || (f.data as any)?.description || JSON.stringify(f.data).slice(0, 50)}`;
     }).join('\n');
   }
 
   private async handlePortfolioQuery(): Promise<ChatResponse> {
     const portfolio = await this.executeSkill('portfolio:get', {});
-    
+
     let content = `💰 **投资组合**\n\n`;
     content += `总资产: $${portfolio.totalEquity?.toFixed(2) || '0.00'}\n`;
     content += `可用余额: $${portfolio.balance?.toFixed(2) || '0.00'}\n\n`;
@@ -671,10 +675,10 @@ export class PA extends BaseAgent {
 
   private async handleAnalysisRequest(symbol?: string): Promise<ChatResponse> {
     const target = symbol || 'BTC';
-    
+
     // 获取最近的 Feed
     const feeds = feedBus.query({ symbol: target, limit: 10 });
-    
+
     if (feeds.length === 0) {
       return { content: `暂无 ${target} 的相关情报。` };
     }
@@ -694,7 +698,7 @@ export class PA extends BaseAgent {
     content += `**综合**: ${decision.thought_process.synthesis}\n\n`;
     content += `💬 ${decision.human_message}`;
 
-    return { content, metadata: { decision } };
+    return { content };
   }
 
   private async handleTradeRequest(params: any): Promise<ChatResponse> {
@@ -705,24 +709,22 @@ export class PA extends BaseAgent {
       side: params.side,
       amount: params.amount,
       description: `User requested ${params.side} ${params.symbol}`,
-    });
+    } as any);
 
     const decision = await this.processFeed(mockFeed);
 
     // 如果决策与请求一致，执行
     if ((params.side === 'buy' && decision.decision === 'BUY') ||
-        (params.side === 'sell' && decision.decision === 'SELL')) {
+      (params.side === 'sell' && decision.decision === 'SELL')) {
       await this.executeDecision(decision);
       return {
-        content: `${decision.human_message}\n\n已执行: ${JSON.stringify(decision.tool_call)}`,
-        metadata: { decision },
+        content: `${decision.human_message}\n\n已执行: ${JSON.stringify(decision.tool_call)}`
       };
     }
 
     // 决策与请求不一致，说明原因
     return {
-      content: `我收到了你的 ${params.side} 请求，但经过分析，当前建议**${decision.decision}**。\n\n理由: ${decision.thought_process.synthesis}\n\n${decision.human_message}`,
-      metadata: { decision },
+      content: `我收到了你的 ${params.side} 请求，但经过分析，当前建议**${decision.decision}**。\n\n理由: ${decision.thought_process.synthesis}\n\n${decision.human_message}`
     };
   }
 

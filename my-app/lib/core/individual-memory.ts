@@ -9,33 +9,15 @@
  */
 
 import type { IndividualMemory } from './types';
-
-// 只在服务端使用 fs
-let fs: typeof import('fs') | null = null;
-let path: typeof import('path') | null = null;
-
-// 动态导入 fs（只在 Node.js 环境）
-async function getFs() {
-  if (!fs && typeof window === 'undefined') {
-    fs = await import('fs');
-  }
-  return fs;
-}
-
-async function getPath() {
-  if (!path && typeof window === 'undefined') {
-    path = await import('path');
-  }
-  return path;
-}
+import * as fs from 'fs';
+import * as path from 'path';
 
 // 存储目录
-const DATA_DIR = typeof process !== 'undefined' ? (process.env.DATA_DIR || './data') : './data';
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 
-async function ensureDir(dir: string): Promise<void> {
-  const fsModule = await getFs();
-  if (fsModule && !fsModule.existsSync(dir)) {
-    fsModule.mkdirSync(dir, { recursive: true });
+function ensureDir(dir: string): void {
+  if (typeof window === 'undefined' && !fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -96,7 +78,7 @@ export interface UserPreferences {
 export class IndividualMemoryStorage implements IndividualMemory {
   private agentId: string;
   private agentDir: string;
-  
+
   // 内存缓存
   stats: AgentStats;
   experiences: Experience[];
@@ -217,14 +199,14 @@ export class IndividualMemoryStorage implements IndividualMemory {
       id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: Date.now(),
     };
-    
+
     this.experiences.unshift(fullExperience);
-    
+
     // 限制数量（保留最近 500 条）
     if (this.experiences.length > 500) {
       this.experiences = this.experiences.slice(0, 500);
     }
-    
+
     this.saveExperiences();
     this.updateStatsFromExperience(fullExperience);
   }
@@ -236,14 +218,14 @@ export class IndividualMemoryStorage implements IndividualMemory {
 
   getExperiences(filter?: { type?: string; limit?: number }): Experience[] {
     let result = this.experiences;
-    
+
     if (filter?.type) {
       result = result.filter(e => e.type === filter.type);
     }
     if (filter?.limit) {
       result = result.slice(0, filter.limit);
     }
-    
+
     return result;
   }
 
@@ -251,8 +233,8 @@ export class IndividualMemoryStorage implements IndividualMemory {
 
   addInsight(insight: Omit<Insight, 'id' | 'createdAt' | 'verifiedCount' | 'successCount'>): void {
     // 检查是否已有类似洞察
-    const existing = this.insights.find(i => 
-      i.pattern === insight.pattern && 
+    const existing = this.insights.find(i =>
+      i.pattern === insight.pattern &&
       i.tags.every(t => insight.tags.includes(t))
     );
 

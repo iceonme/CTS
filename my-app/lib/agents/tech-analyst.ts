@@ -1,19 +1,11 @@
-/**
- * Technical Analyst - 技术分析员
- * 
- * 一个受限的专业 Agent：
- * 1. 低自主性，不能动态发现 Skills
- * 2. 只能回答技术分析相关问题
- * 3. 超出范围时直接拒绝
- * 4. 被动响应，不支持主动任务
- */
-
-import { BaseAgent } from '@/lib/core/base-agent';
+import { BaseAgent } from '../core/base-agent';
 import type {
   AgentConfig,
   ChatContext,
   ChatResponse,
-} from '@/lib/core/types';
+} from '../core/types';
+import { TechAnalysisSkills } from '../skills/technical-analysis';
+import { feedBus, createFeed, type Feed } from '../core/feed';
 
 // ========== 技术分析员配置 ==========
 
@@ -80,6 +72,82 @@ export class TechnicalAnalyst extends BaseAgent {
       isPrimary: false,
     };
     super(mergedConfig);
+    console.log('[TechnicalAnalyst] super() finished');
+
+    // 注册相关技能
+    console.log('[TechnicalAnalyst] Registering skills...');
+    TechAnalysisSkills.forEach(skill => TechnicalAnalyst.registerSkill(skill));
+
+    // 订阅行情 Feed
+    console.log('[TechnicalAnalyst] Subscribing to FeedBus...');
+    feedBus.subscribeAll(this.onFeed.bind(this));
+    console.log('[TechnicalAnalyst] constructor finished');
+  }
+
+  /**
+   * 自动处理来自 FeedBus 的消息
+   */
+  private async onFeed(feed: Feed): Promise<void> {
+    // 只处理来自行情引擎的消息或特定交易对的消息
+    if (feed.from === 'market-replay' && feed.type === 'signal') {
+      const symbol = (feed.data as any).symbol || 'BTCUSDT';
+      const price = (feed.data as any).price?.current; // Extract price here
+      console.log(`[${this.identity.name}] 正在分析行情: ${symbol} @ $${price}`);
+
+      // 执行分析并在分析完成后发布新的 Feed
+      await this.performAutoAnalysis(symbol, feed.timestamp);
+    }
+  }
+
+  /**
+   * 自动执行分析并发布 Feed
+   */
+  private async performAutoAnalysis(symbol: string, timestamp: number): Promise<void> {
+    try {
+      const context = { now: timestamp };
+      // 1. 获取 RSI
+      const rsiResult = await this.executeSkill('analysis:rsi', { symbol }, context);
+
+      // 2. 获取趋势
+      const trendResult = await this.executeSkill('analysis:trend', { symbol }, context);
+
+      if (rsiResult.error || trendResult.error) {
+        console.warn(`[${this.identity.name}] 分析跳过: ${rsiResult.error || trendResult.error}`);
+        return;
+      }
+
+      // 3. 构造并发布分析 Feed
+      const analysisFeed = createFeed(
+        this.identity.id,
+        'analysis',
+        rsiResult.rsi > 70 || rsiResult.rsi < 30 ? 'high' : 'medium',
+        {
+          symbol,
+          signalType: rsiResult.rsi > 70 ? 'overbought' : rsiResult.rsi < 30 ? 'oversold' : 'trend_confirm',
+          strength: Math.abs(rsiResult.rsi - 50) / 50,
+          indicators: {
+            rsi: rsiResult.rsi,
+            ma: {
+              short: trendResult.indicators?.sma7 || 0,
+              medium: trendResult.indicators?.sma25 || 0,
+              long: trendResult.indicators?.sma50 || 0
+            }
+          },
+          price: {
+            current: trendResult.price || 0
+          },
+          timeframe: '1m',
+          description: `RSI is ${rsiResult.rsi.toFixed(2)}, Trend is ${trendResult.trend}.`
+        } as any
+      );
+
+      // 覆盖时间戳为回放的时间戳
+      analysisFeed.timestamp = timestamp;
+
+      feedBus.publish(analysisFeed);
+    } catch (error) {
+      console.error(`[${this.identity.name}] Auto analysis failed:`, error);
+    }
   }
 
   /**
@@ -138,20 +206,20 @@ export class TechnicalAnalyst extends BaseAgent {
    */
   protected checkScope(message: string): { inScope: boolean; reason?: string } {
     const technicalKeywords = [
-      'rsi', 'macd', '均线', 'ma', '趋势', 'trend', '支撑', '阻力', 
+      'rsi', 'macd', '均线', 'ma', '趋势', 'trend', '支撑', '阻力',
       '分析', 'technical', '指标', 'indicator', '图表', 'chart',
       '突破', 'breakout', '回调', 'pullback', '超买', 'oversold',
       '超卖', 'overbought', '金叉', '死叉', '背离', 'divergence'
     ];
-    
-    const hasTechnicalKeyword = technicalKeywords.some(kw => 
+
+    const hasTechnicalKeyword = technicalKeywords.some(kw =>
       message.toLowerCase().includes(kw.toLowerCase())
     );
 
     if (!hasTechnicalKeyword) {
-      return { 
-        inScope: false, 
-        reason: 'Message does not contain technical analysis keywords' 
+      return {
+        inScope: false,
+        reason: 'Message does not contain technical analysis keywords'
       };
     }
 
@@ -163,7 +231,7 @@ export class TechnicalAnalyst extends BaseAgent {
    */
   private parseIntent(message: string): {
     type: 'rsi' | 'trend' | 'comprehensive' | 'general';
-    symbol?: string;
+    symbol: string;
   } {
     const lower = message.toLowerCase();
     const symbol = this.extractSymbol(lower) || 'BTC';
@@ -193,7 +261,7 @@ export class TechnicalAnalyst extends BaseAgent {
     let content = `📊 **${symbol} RSI 分析**\n\n`;
     content += `当前 RSI: ${result.rsi?.toFixed(2) || 'N/A'}\n`;
     content += `状态: ${this.getRSIStatus(result.rsi)}\n\n`;
-    
+
     if (result.rsi > 70) {
       content += `⚠️ 超买区域，注意回调风险`;
     } else if (result.rsi < 30) {
@@ -223,7 +291,7 @@ export class TechnicalAnalyst extends BaseAgent {
     content += `短期趋势: ${result.shortTerm || 'N/A'}\n`;
     content += `中期趋势: ${result.mediumTerm || 'N/A'}\n`;
     content += `长期趋势: ${result.longTerm || 'N/A'}\n\n`;
-    
+
     if (result.keyLevels) {
       content += `关键价位:\n`;
       content += `- 支撑位: $${result.keyLevels.support?.join(', $') || 'N/A'}\n`;
@@ -244,15 +312,15 @@ export class TechnicalAnalyst extends BaseAgent {
     ]);
 
     let content = `📊 **${symbol} 技术分析报告**\n\n`;
-    
+
     content += `【RSI】\n`;
     content += `数值: ${rsiResult.rsi?.toFixed(2) || 'N/A'}\n`;
     content += `状态: ${this.getRSIStatus(rsiResult.rsi)}\n\n`;
-    
+
     content += `【趋势】\n`;
     content += `短期: ${trendResult.shortTerm || 'N/A'}\n`;
     content += `中期: ${trendResult.mediumTerm || 'N/A'}\n\n`;
-    
+
     content += `【客观数据】\n`;
     content += `本分析仅供参考，不构成投资建议。\n`;
     content += `如需交易建议，请咨询 PA。`;
@@ -265,7 +333,7 @@ export class TechnicalAnalyst extends BaseAgent {
    */
   private async handleGeneralTechnicalQuery(message: string): Promise<ChatResponse> {
     const symbol = this.extractSymbol(message) || 'BTC';
-    
+
     // 默认返回基础技术指标
     return this.handleComprehensiveAnalysis(symbol);
   }
