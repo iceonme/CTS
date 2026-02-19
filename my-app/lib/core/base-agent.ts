@@ -22,6 +22,7 @@ import type {
   AgentStatus,
 } from './types';
 import { getIndividualMemoryStorage } from './individual-memory';
+import { IClock, systemClock } from './clock';
 
 // ========== 记忆系统实现 ==========
 
@@ -102,12 +103,14 @@ export abstract class BaseAgent {
   readonly memory: AgentMemory;
   protected status: AgentStatus = 'idle';
 
-  private baseSkills: Set<string>;
+  protected baseSkills: Set<string>;
   private extendedSkills: Set<string>;
   private skillCallHistory: SkillCall[] = [];
+  protected readonly clock: IClock;
 
-  constructor(config: AgentConfig) {
+  constructor(config: AgentConfig, clock: IClock = systemClock) {
     this.config = config;
+    this.clock = clock;
     this.memory = {
       session: new SessionMemoryImpl(),
       individual: getIndividualMemoryStorage(config.identity.id),
@@ -148,12 +151,12 @@ export abstract class BaseAgent {
     const skillContext: SkillContext = {
       agent: this.identity,
       memory: this.memory,
-      now: context?.now,
+      now: context?.now || this.clock.now(),
       callHistory: this.skillCallHistory,
     };
 
     const result = await skill.handler(params, skillContext);
-    this.skillCallHistory.push({ skillId, params, result, timestamp: Date.now() });
+    this.skillCallHistory.push({ skillId, params, result, timestamp: this.clock.now() });
     return result;
   }
 

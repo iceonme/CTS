@@ -11,13 +11,13 @@ Simple two-operation workflow: **Download** (pull) at start, **Upload** (push) a
 
 - **Owner**: iceonme
 - **Repo**: cts
-- **Token**: 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
+- **Token**: <YOUR_GITHUB_TOKEN>
 
 ## Setup (First Time - Already Done)
 
 ```bash
 # Remote URL already configured with token
-git remote set-url origin https://iceonme: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@github.com/iceonme/cts.git
+git remote set-url origin https://iceonme:<YOUR_GITHUB_TOKEN>@github.com/iceonme/cts.git
 ```
 
 ## Operations

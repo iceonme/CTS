@@ -6,6 +6,7 @@ import type {
 } from '../core/types';
 import { TechAnalysisSkills } from '../skills/technical-analysis';
 import { feedBus, createFeed, type Feed } from '../core/feed';
+import { IClock, systemClock } from '../core/clock';
 
 // ========== 技术分析员配置 ==========
 
@@ -61,7 +62,7 @@ const TECH_ANALYST_CONFIG: AgentConfig = {
 // ========== 技术分析员实现 ==========
 
 export class TechnicalAnalyst extends BaseAgent {
-  constructor(config?: Partial<AgentConfig>) {
+  constructor(config?: Partial<AgentConfig>, clock: IClock = systemClock) {
     const mergedConfig: AgentConfig = {
       ...TECH_ANALYST_CONFIG,
       ...config,
@@ -71,7 +72,7 @@ export class TechnicalAnalyst extends BaseAgent {
       behavior: { ...TECH_ANALYST_CONFIG.behavior, ...config?.behavior },
       isPrimary: false,
     };
-    super(mergedConfig);
+    super(mergedConfig, clock);
     console.log('[TechnicalAnalyst] super() finished');
 
     // 注册相关技能
@@ -141,8 +142,8 @@ export class TechnicalAnalyst extends BaseAgent {
         } as any
       );
 
-      // 覆盖时间戳为回放的时间戳
-      analysisFeed.timestamp = timestamp;
+      // 注意：createFeed 内部默认使用 Date.now()，如有需要可以重写 timestamp
+      analysisFeed.timestamp = timestamp || this.clock.now();
 
       feedBus.publish(analysisFeed);
     } catch (error) {
@@ -360,9 +361,9 @@ export class TechnicalAnalyst extends BaseAgent {
 
 let techAnalystInstance: TechnicalAnalyst | null = null;
 
-export function getTechnicalAnalyst(config?: Partial<AgentConfig>): TechnicalAnalyst {
+export function getTechnicalAnalyst(config?: Partial<AgentConfig>, clock: IClock = systemClock): TechnicalAnalyst {
   if (!techAnalystInstance) {
-    techAnalystInstance = new TechnicalAnalyst(config);
+    techAnalystInstance = new TechnicalAnalyst(config, clock);
   }
   return techAnalystInstance;
 }

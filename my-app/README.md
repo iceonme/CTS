@@ -139,11 +139,16 @@ npx ts-node scripts/fetch-binance-data.ts
 
 ## Development Log
 
-### 2025-02-18
-- ✅ Implemented K-line chart page with TradingView Lightweight Charts
-- ✅ Integrated DuckDB for local market data storage
-- ✅ Created API endpoint `/api/market/klines` with dynamic aggregation
-- ✅ Fetched 525,601 BTCUSDT 1-minute K-lines from Binance (2025 full year)
-- ✅ Added period switching (1m/5m/15m/1h/4h/1d) with auto-aggregation
-- ✅ Fixed DuckDB native module issues for Next.js
-- ✅ Added URL parameter support for default timeframe
+### 2026-02-20 (Today)
+- ✅ 修复竞技场图表实时渲染问题，确保大步长回测图表同步更新
+- ✅ 修复净值计算静态 Bug，实现全局资产定时重估，解决“死线”问题
+- ✅ 优化 MiniMax Token 消耗：切换 `MiniMax-Text-01` 模型 + 引入极简 CSV 数据格式
+- ✅ 修复 LLM 数据源缺失问题：实现 1m 原始数据手动聚合为 1h 采样线
+- ✅ 增强 MiniMax 客户端鲁棒性，增加防御性校验与详细调试日志
+
+## Future Roadmap
+
+- 🛠 **增强 AI 决策能力**：为 LLM 提示词引入 MA、RSI、MACD 等技术指标
+- 🔍 **多时区视野分析**：整合日线与小时线数据，提升模型对宏观趋势的把握
+- 🧠 **推理框架优化**：重构 System Prompt，引导模型采用结构化思维链分析
+- ⚖️ **交易精度验证**：优化 `VirtualPortfolio` 大额订单执行精度及手续费处理

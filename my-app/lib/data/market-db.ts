@@ -49,6 +49,7 @@ function exec(db: duckdb.Database, sql: string): Promise<void> {
 export class MarketDatabase {
   private static instance: MarketDatabase | null = null;
   private db: duckdb.Database;
+  private conn: duckdb.Connection;
   private dbPath: string;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
@@ -60,6 +61,7 @@ export class MarketDatabase {
     }
     this.dbPath = dbPath || path.join(dataDir, 'market-v2.db');
     this.db = new duckdb.Database(this.dbPath);
+    this.conn = this.db.connect();
   }
 
   static getInstance(dbPath?: string): MarketDatabase {
@@ -69,57 +71,85 @@ export class MarketDatabase {
     return MarketDatabase.instance;
   }
 
+  private async execSql(sql: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.conn.exec(sql, (err: Error | null) => {
+        if (err) {
+          console.error(`[MarketDB] Exec Error: ${err.message}\nSQL: ${sql.slice(0, 500)}`);
+          reject(err);
+        } else resolve();
+      });
+    });
+  }
+
+  private async querySql(sql: string): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      this.conn.all(sql, (err: Error | null, rows: any[]) => {
+        if (err) {
+          console.error(`[MarketDB] Query Error: ${err.message}\nSQL: ${sql.slice(0, 500)}`);
+          reject(err);
+        } else resolve(rows || []);
+      });
+    });
+  }
+
   async init(): Promise<void> {
     if (this.initialized) return;
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
-      await exec(this.db, `
-        CREATE TABLE IF NOT EXISTS klines (
-          symbol VARCHAR,
-          interval VARCHAR,
-          timestamp BIGINT,
-          open DOUBLE,
-          high DOUBLE,
-          low DOUBLE,
-          close DOUBLE,
-          volume DOUBLE,
-          quote_volume DOUBLE,
-          taker_buy_base_volume DOUBLE,
-          trade_count INTEGER,
-          PRIMARY KEY (symbol, interval, timestamp)
-        );
-      `);
+      try {
+        await this.execSql(`
+          CREATE TABLE IF NOT EXISTS klines (
+            symbol VARCHAR,
+            interval VARCHAR,
+            timestamp BIGINT,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE,
+            volume DOUBLE,
+            quote_volume DOUBLE,
+            taker_buy_base_volume DOUBLE,
+            trade_count INTEGER,
+            PRIMARY KEY (symbol, interval, timestamp)
+          );
+        `);
 
-      await exec(this.db, `
-        CREATE INDEX IF NOT EXISTS idx_klines_time 
-        ON klines(symbol, interval, timestamp);
-      `);
-      this.initialized = true;
-      this.initPromise = null;
+        await this.execSql(`
+          CREATE INDEX IF NOT EXISTS idx_klines_time 
+          ON klines(symbol, interval, timestamp);
+        `);
+        this.initialized = true;
+      } catch (e) {
+        this.initPromise = null;
+        throw e;
+      }
     })();
 
     return this.initPromise;
   }
 
   async getDateRange(symbol: string, interval: string): Promise<{ min: Date; max: Date } | null> {
-    const rows = await queryAll(this.db, `
+    await this.init();
+    const rows = await this.querySql(`
       SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts 
       FROM klines 
       WHERE symbol = '${symbol}' AND interval = '${interval}'
     `);
-    const result = Array.isArray(rows) ? rows : Object.values(rows || {});
-    if (result.length === 0 || !(result[0] as any).min_ts) return null;
+
+    if (rows.length === 0 || !rows[0].min_ts) return null;
 
     return {
-      min: new Date(Number((result[0] as any).min_ts)),
-      max: new Date(Number((result[0] as any).max_ts))
+      min: new Date(Number(rows[0].min_ts)),
+      max: new Date(Number(rows[0].max_ts))
     };
   }
 
   async insertKlines(data: KlineData[]): Promise<number> {
+    await this.init();
     if (data.length === 0) return 0;
-    const batchSize = 1000;
+    const batchSize = 500; // 减小批大小以提高稳定性
     let totalInserted = 0;
 
     for (let i = 0; i < data.length; i += batchSize) {
@@ -131,20 +161,21 @@ export class MarketDatabase {
       )`).join(',');
 
       try {
-        await exec(this.db, `
+        await this.execSql(`
           INSERT OR IGNORE INTO klines 
           (symbol, interval, timestamp, open, high, low, close, volume, quote_volume, taker_buy_base_volume, trade_count)
           VALUES ${values}
         `);
         totalInserted += batch.length;
       } catch (e: any) {
-        console.error('Batch insert error:', e.message);
+        console.error('[MarketDB] Batch insert error:', e.message);
       }
     }
     return totalInserted;
   }
 
   async queryKlines(params: KlineQueryParams): Promise<KlineData[]> {
+    await this.init();
     const { symbol, interval, start, end, limit = 1000 } = params;
     let sql = `
       SELECT symbol, interval, timestamp, open, high, low, close, 
@@ -158,22 +189,22 @@ export class MarketDatabase {
     if (end) sql += ` AND timestamp <= ${end.getTime()}`;
     sql += ` ORDER BY timestamp DESC LIMIT ${limit}`;
 
-    const rows = await queryAll(this.db, sql);
-    const result = Array.isArray(rows) ? rows : Object.values(rows || {});
+    const rows = await this.querySql(sql);
 
-    return result.map((row: any) => ({
+    return rows.map((row: any) => ({
       symbol: row.symbol, interval: row.interval, timestamp: Number(row.timestamp),
       open: row.open, high: row.high, low: row.low, close: row.close,
       volume: row.volume, quoteVolume: row.quoteVolume,
       takerBuyBaseVolume: row.takerBuyBaseVolume, tradeCount: row.tradeCount
-    })).reverse(); // DESC 取最近数据后反转，保证调用方拿到升序序列
+    })).reverse();
   }
 
   async getStats(): Promise<{ totalRecords: number; symbols: string[] }> {
-    const countRows = await queryAll(this.db, 'SELECT COUNT(*) as count FROM klines');
-    const symbolsRows = await queryAll(this.db, 'SELECT DISTINCT symbol FROM klines');
+    await this.init();
+    const countRows = await this.querySql('SELECT COUNT(*) as count FROM klines');
+    const symbolsRows = await this.querySql('SELECT DISTINCT symbol FROM klines');
     return {
-      totalRecords: (countRows[0] as any).count || 0,
+      totalRecords: countRows[0].count || 0,
       symbols: symbolsRows.map((r: any) => r.symbol).filter(Boolean)
     };
   }

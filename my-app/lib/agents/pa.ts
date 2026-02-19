@@ -12,6 +12,7 @@
 import { BaseAgent } from '../core/base-agent';
 import { feedBus, createFeed, type Feed, type FeedImportance } from '../core/feed';
 import { getCollectiveMemoryStorage, type CollectiveMemoryEntry } from '../core/feed-storage';
+import { IClock, systemClock } from '../core/clock';
 import type {
   AgentConfig,
   ChatContext,
@@ -155,7 +156,7 @@ export class PA extends BaseAgent {
   private autoExecute: boolean = false;  // 是否自动执行决策
   private confidenceThreshold: number = 70;  // 自动执行阈值
 
-  constructor(config?: Partial<AgentConfig>) {
+  constructor(config?: Partial<AgentConfig>, clock: IClock = systemClock) {
     const mergedConfig: AgentConfig = {
       ...PA_CEO_CONFIG,
       ...config,
@@ -165,7 +166,7 @@ export class PA extends BaseAgent {
       behavior: { ...PA_CEO_CONFIG.behavior, ...config?.behavior },
       isPrimary: true,
     };
-    super(mergedConfig);
+    super(mergedConfig, clock);
 
     // 订阅 Feed 总线
     this.subscribeToFeeds();
@@ -225,7 +226,7 @@ export class PA extends BaseAgent {
       metadata: {
         feeds_considered: relatedFeeds.map(f => f.id),
         skills_used: ['portfolio:get'],
-        timestamp: Date.now(),
+        timestamp: this.clock.now(),
       },
     };
 
@@ -247,7 +248,7 @@ export class PA extends BaseAgent {
     const symbol = (triggerFeed.data as any)?.symbol;
 
     // 获取最近 1 小时的相关 Feed
-    const since = Date.now() - 60 * 60 * 1000;
+    const since = this.clock.now() - 60 * 60 * 1000;
     let feeds = feedBus.query({ since, limit: 20 });
 
     // 按 symbol 过滤（如果有）
@@ -763,9 +764,9 @@ export class PA extends BaseAgent {
 
 let paInstance: PA | null = null;
 
-export function getPA(config?: Partial<AgentConfig>): PA {
+export function getPA(config?: Partial<AgentConfig>, clock: IClock = systemClock): PA {
   if (!paInstance) {
-    paInstance = new PA(config);
+    paInstance = new PA(config, clock);
   }
   return paInstance;
 }

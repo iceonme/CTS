@@ -55,6 +55,9 @@ export default function Home() {
               <a href="/warroom" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
                 WarRoom
               </a>
+              <a href="/arena" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
+                🏟️ 竞技场
+              </a>
               <a
                 href="/settings"
                 className="text-sm font-medium text-gray-400 hover:text-white transition-colors"
@@ -104,6 +107,12 @@ export default function Home() {
                   className="block px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors"
                 >
                   ⚔️ 进入 WarRoom
+                </a>
+                <a
+                  href="/arena"
+                  className="block px-3 py-2 bg-blue-900/30 hover:bg-blue-900/50 border border-blue-800/50 rounded-lg text-sm text-blue-300 transition-colors"
+                >
+                  🏟️ 进入回测竞技场
                 </a>
                 <a
                   href="/settings"

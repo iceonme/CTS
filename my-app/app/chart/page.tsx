@@ -25,6 +25,21 @@ const INTERVALS = [
 const VISIBLE_BARS = 150;
 const LOAD_MORE_BARS = 200;
 
+function processData(data: KlineData[]) {
+  if (data.length === 0) return [];
+
+  // 1. 排序（按时间戳升序）
+  const sorted = [...data].sort((a, b) => a.timestamp - b.timestamp);
+
+  // 2. 去重（保留最新的数据点，即同一时间戳保留数组中靠后的一个）
+  const uniqueMap = new Map<number, KlineData>();
+  sorted.forEach(d => {
+    uniqueMap.set(d.timestamp, d);
+  });
+
+  return Array.from(uniqueMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+}
+
 function toChartData(data: KlineData[]) {
   return data.map(d => ({
     time: Math.floor(d.timestamp / 1000) as UTCTimestamp,
@@ -45,7 +60,7 @@ function ChartContent() {
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  
+
   const searchParams = useSearchParams();
   const [interval, setInterval] = useState(() => searchParams.get('interval') || '1d');
   const [data, setData] = useState<KlineData[]>([]);
@@ -57,8 +72,9 @@ function ChartContent() {
     if (!chartRef.current || !candleSeriesRef.current || !volumeSeriesRef.current) return;
     if (data.length === 0) return;
 
-    candleSeriesRef.current.setData(toChartData(data) as any);
-    volumeSeriesRef.current.setData(toVolumeData(data) as any);
+    const processed = processData(data);
+    candleSeriesRef.current.setData(toChartData(processed) as any);
+    volumeSeriesRef.current.setData(toVolumeData(processed) as any);
   }, [data]);
 
   // 初始化图表
@@ -108,11 +124,11 @@ function ChartContent() {
     try {
       const res = await fetch(`/api/market/klines/?symbol=BTCUSDT&interval=${intv}&limit=${VISIBLE_BARS}`);
       const result = await res.json();
-      
+
       if (result.success && result.data.length > 0) {
         setData(result.data);
         setHasMore(result.data.length >= VISIBLE_BARS);
-        
+
         setTimeout(() => {
           chartRef.current?.timeScale().scrollToRealTime();
         }, 100);
@@ -130,24 +146,24 @@ function ChartContent() {
       console.log('Skip loadHistory:', { loading, hasMore, dataLength: data.length });
       return;
     }
-    
+
     setLoading(true);
     const oldestTimestamp = data[0].timestamp;
-    
+
     try {
       console.log('Loading history before:', oldestTimestamp);
       const res = await fetch(
         `/api/market/klines/?symbol=BTCUSDT&interval=${interval}&before=${oldestTimestamp}&limit=${LOAD_MORE_BARS}`
       );
       const result = await res.json();
-      
+
       console.log('History response:', result.meta);
-      
+
       if (result.success && result.data.length > 0) {
         const newData = result.data;
         const combined = [...newData, ...data];
         setData(combined);
-        
+
         if (newData.length < LOAD_MORE_BARS) {
           setHasMore(false);
         }
@@ -168,11 +184,11 @@ function ChartContent() {
     setInterval(val);
     setData([]);
     setHasMore(true);
-    
+
     const url = new URL(window.location.href);
     url.searchParams.set('interval', val);
     window.history.replaceState({}, '', url);
-    
+
     loadLatest(val);
   };
 
@@ -182,7 +198,7 @@ function ChartContent() {
     loadLatest(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
   // 当interval变化时重新加载
   useEffect(() => {
     if (data.length === 0) {
@@ -215,16 +231,15 @@ function ChartContent() {
                 key={i.value}
                 onClick={() => handleIntervalChange(i.value)}
                 disabled={loading}
-                className={`px-3 py-1.5 text-sm rounded transition-colors disabled:opacity-50 ${
-                  interval === i.value ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'
-                }`}
+                className={`px-3 py-1.5 text-sm rounded transition-colors disabled:opacity-50 ${interval === i.value ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'
+                  }`}
               >
                 {i.label}
               </button>
             ))}
           </div>
           <div className="w-px h-6 bg-gray-700" />
-          
+
           {hasMore ? (
             <button
               onClick={loadHistory}
@@ -237,7 +252,7 @@ function ChartContent() {
           ) : (
             <span className="text-xs text-gray-500">已加载全部</span>
           )}
-          
+
           {data.length > 0 && (
             <div className="ml-auto text-xs text-gray-400">
               <span>{oldestDate} → {newestDate}</span>
