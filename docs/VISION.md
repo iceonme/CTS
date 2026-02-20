@@ -192,6 +192,22 @@ TradeMind 交易社交网络
 
 ---
 
+## 🏗️ 核心架构逻辑：三层驱动模型
+
+为了实现“环境无关性”并最大化信息利用效率，TradeMind 遵循以下三层架构：
+
+| 层次 | 名称 | 职责 | 核心组件 |
+|------|------|------|------|
+| **L1: 数据层** | **Data Layer** | 提供客观事实（K线、概率、指标原始数据） | DuckDB, Exchange SDK |
+| **L2: 调用层** | **Calling Layer** | 逻辑加工与分析工具，供程序或 LLM 直接调用 | Skills, Function Calls |
+| **L3: 信号层** | **Feed Layer** | MAS 协作空间，Agent 交换观点与辩论 | FeedBus, Agent Discussions |
+
+### 驱动隔离模式
+- **Arena (加速驱动)**: 外部泵（RaceController）通过注入 VirtualClock 加速历史数据流转。
+- **Production (原生驱动)**: 内部心脏（Clock/Socket）实时获取并处理真实数据信号。
+
+---
+
 ## 核心价值主张
 
 ### For 小白投资者

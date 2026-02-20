@@ -59,25 +59,69 @@ export async function POST(req: NextRequest) {
                 controller.addContestant(masSquad);
             }
 
-            // 3. LLM 单兵
-            if (contestantId === 'llm-solo' || (typeof conf === 'object' && conf.type === 'llm-solo')) {
+            // 3. LLM 单兵 (支持多种ID格式：llm-solo, llm-lite, llm-indicator, llm-strategy)
+            if (contestantId.startsWith('llm-') || (typeof conf === 'object' && conf.type === 'llm-solo')) {
                 const minimaxKey = process.env.MINIMAX_API_KEY;
                 const minimaxGroupId = process.env.MINIMAX_GROUP_ID;
 
                 if (minimaxKey) {
                     const minimax = new MiniMaxClient(minimaxKey, minimaxGroupId);
+                    
+                    // 构建 LLMSoloConfig
+                    const llmConfig = settings.intelligenceLevel ? {
+                        intelligenceLevel: settings.intelligenceLevel as 'lite' | 'indicator' | 'strategy',
+                        includeDaily: settings.includeDaily || false,
+                        customSystemPrompt: settings.systemPrompt
+                    } : settings.systemPrompt; // 向后兼容：旧格式使用字符串
+
                     const llmSolo = new LLMSoloContestant(
                         typeof conf === 'string' ? 'llm-solo' : conf.id,
-                        typeof conf === 'string' ? 'LLM 单兵 (MiniMax)' : (conf.name || '自定义 LLM'),
+                        typeof conf === 'string' ? 'LLM 单兵 (MiniMax)' : (conf.name || `LLM-${settings.intelligenceLevel || 'lite'}`),
                         db,
                         minimax,
                         symbol,
-                        settings.systemPrompt
+                        llmConfig
                     );
                     controller.addContestant(llmSolo);
-                    console.log(`[Backtest API] Added LLM Solo contestant: ${llmSolo.name}`);
+                    console.log(`[Backtest API] Added LLM Solo contestant: ${llmSolo.name} (${settings.intelligenceLevel || 'lite'})`);
                 } else {
                     console.warn('[Backtest API] MiniMax API Key missing, skipping LLM Solo');
+                    // 添加一个模拟LLM用于测试（无实际API调用）
+                    const mockMinimax = {
+                        chat: async (prompt: string, systemPrompt: string) => {
+                            console.log(`[MockLLM] Prompt length: ${prompt.length}`);
+                            // 模拟决策：根据价格趋势简单判断
+                            if (prompt.includes('涨跌:')) {
+                                const match = prompt.match(/涨跌:\s*([-\d.]+)%/);
+                                if (match) {
+                                    const change = parseFloat(match[1]);
+                                    if (change < -5) {
+                                        return JSON.stringify({ decision: 'BUY', percentage: 0.5, reasoning: '跌幅超过5%，模拟买入', confidence: 70 });
+                                    } else if (change > 5) {
+                                        return JSON.stringify({ decision: 'SELL', percentage: 0.3, reasoning: '涨幅超过5%，模拟卖出', confidence: 65 });
+                                    }
+                                }
+                            }
+                            return JSON.stringify({ decision: 'WAIT', percentage: 0, reasoning: '模拟模式：观望', confidence: 50 });
+                        }
+                    };
+                    
+                    const llmConfig = settings.intelligenceLevel ? {
+                        intelligenceLevel: settings.intelligenceLevel as 'lite' | 'indicator' | 'strategy',
+                        includeDaily: settings.includeDaily || false,
+                        customSystemPrompt: settings.systemPrompt
+                    } : settings.systemPrompt;
+
+                    const llmSolo = new LLMSoloContestant(
+                        typeof conf === 'string' ? 'llm-solo' : conf.id,
+                        typeof conf === 'string' ? 'LLM 单兵 (模拟)' : (conf.name + ' (模拟)'),
+                        db,
+                        mockMinimax as any,
+                        symbol,
+                        llmConfig
+                    );
+                    controller.addContestant(llmSolo);
+                    console.log(`[Backtest API] Added MOCK LLM Solo (no API key): ${llmSolo.name}`);
                 }
             }
         }
@@ -93,6 +137,7 @@ export async function POST(req: NextRequest) {
                             data: {
                                 timestamp: progressData.timestamp,
                                 equities: progressData.equities,
+                                positions: progressData.positions,
                                 progress: progressData.progress,
                                 logs: progressData.logs,
                                 trades: progressData.trades

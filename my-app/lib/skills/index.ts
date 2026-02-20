@@ -20,6 +20,8 @@ export { skillScheduler } from './core/skill-scheduler';
 
 // Tools
 export { CoinGeckoTools, CoinGeckoPriceTool, CoinGeckoChartTool, CoinGeckoBTCDOGETool } from './tools/coingecko-tools';
+// 分析工具计算函数（客户端安全）
+export { calculateRSI, calculateSMA, calculateEMA, calculateMACD, createAnalysisTools } from './tools/analysis-tools';
 
 // Skills
 export { 
@@ -77,6 +79,7 @@ export function initializeSkillsSystem(useConfig: boolean = true): void {
   // 1. 注册 Tools
   console.log('[SkillsSystem] Registering Tools...');
   CoinGeckoTools.forEach(tool => toolRegistry.register(tool));
+  // AnalysisTools 在服务端动态注册
 
   if (useConfig) {
     // 2. 使用可配置模式 - 从配置管理器加载 PA 配置

@@ -7,7 +7,9 @@ import { DEFAULT_LLM_SYSTEM_PROMPT } from '@/lib/agents/contestants/llm-solo-con
 const CONTESTANTS_METADATA = [
     { id: 'dca-bot', name: '基准定投 (DCA)', color: '#3b82f6' }, // Blue
     { id: 'mas-squad', name: 'MAS 协作小队', color: '#10b981' }, // Emerald
-    { id: 'llm-solo', name: 'LLM 单兵 (MiniMax)', color: '#a855f7' }, // Purple
+    { id: 'llm-lite', name: 'LLM-Lite', color: '#a855f7' }, // Purple
+    { id: 'llm-indicator', name: 'LLM-Indicator', color: '#ec4899' }, // Pink
+    { id: 'llm-strategy', name: 'LLM-Strategy', color: '#f59e0b' }, // Amber
 ];
 
 export default function ArenaPage() {
@@ -16,11 +18,20 @@ export default function ArenaPage() {
     const [logs, setLogs] = useState<any[]>([]);
     const [trades, setTrades] = useState<any[]>([]);
     const [activeTab, setActiveTab] = useState<'logs' | 'trades'>('logs');
-    const [allContestants, setAllContestants] = useState<any[]>(CONTESTANTS_METADATA.map(c => ({
-        ...c,
-        type: c.id === 'dca-bot' ? 'dca' : c.id === 'mas-squad' ? 'mas' : 'llm-solo',
-        settings: c.id === 'llm-solo' ? { systemPrompt: DEFAULT_LLM_SYSTEM_PROMPT } : c.id === 'dca-bot' ? { investAmount: 500, intervalMinutes: 10080 } : {}
-    })));
+    const [allContestants, setAllContestants] = useState<any[]>(CONTESTANTS_METADATA.map(c => {
+        if (c.id === 'dca-bot') {
+            return { ...c, type: 'dca', settings: { investAmount: 500, intervalMinutes: 10080 } }; // 7天
+        } else if (c.id === 'mas-squad') {
+            return { ...c, type: 'mas', settings: {} };
+        } else if (c.id === 'llm-lite') {
+            return { ...c, type: 'llm-solo', settings: { intelligenceLevel: 'lite', systemPrompt: '' } };
+        } else if (c.id === 'llm-indicator') {
+            return { ...c, type: 'llm-solo', settings: { intelligenceLevel: 'indicator', systemPrompt: '' } };
+        } else if (c.id === 'llm-strategy') {
+            return { ...c, type: 'llm-solo', settings: { intelligenceLevel: 'strategy', includeDaily: false, systemPrompt: '' } };
+        }
+        return c;
+    }));
     const [status, setStatus] = useState<'idle' | 'running' | 'paused' | 'stopped'>('idle');
     const [abortController, setAbortController] = useState<AbortController | null>(null);
     const [results, setResults] = useState<any[]>([]);
@@ -34,9 +45,9 @@ export default function ArenaPage() {
         symbol: 'BTCUSDT',
         start: '2025-01-01',
         end: '2025-01-07',
-        stepMinutes: 15,
+        stepMinutes: 720, // 默认12小时
     });
-    const [selectedContestants, setSelectedContestants] = useState<string[]>(['dca-bot', 'llm-solo']);
+    const [selectedContestants, setSelectedContestants] = useState<string[]>(['dca-bot', 'llm-lite', 'llm-indicator', 'llm-strategy']);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [isAdding, setIsAdding] = useState(false);
 
@@ -119,6 +130,7 @@ export default function ArenaPage() {
                                 setHistory(prev => [...prev, {
                                     timestamp: payload.data.timestamp,
                                     equities: payload.data.equities,
+                                    positions: payload.data.positions,
                                     progress: payload.data.progress
                                 }]);
                             }
@@ -404,10 +416,58 @@ export default function ArenaPage() {
                                                                 {log.decision} {log.percentage > 0 && `${(log.percentage * 100).toFixed(0)}%`}
                                                             </span>
                                                         )}
+                                                        {log.type === 'status' && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-900/30 text-blue-400">
+                                                                状态更新
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    <p className="text-gray-300 leading-relaxed">
-                                                        {log.type === 'decision' ? log.reasoning : log.message}
-                                                    </p>
+                                                    {log.type === 'decision' && (
+                                                        <div className="space-y-2">
+                                                            <p className="text-gray-300 leading-relaxed">{log.reasoning}</p>
+                                                            
+                                                            {/* LLM 输入输出详情 */}
+                                                            <div className="mt-2 space-y-1">
+                                                                {log.prompt && (
+                                                                    <details className="text-[10px]">
+                                                                        <summary className="text-gray-500 cursor-pointer hover:text-gray-400">
+                                                                            📥 输入 Prompt ({log.prompt.length} 字符)
+                                                                        </summary>
+                                                                        <pre className="mt-1 p-2 bg-gray-900/50 rounded text-gray-400 overflow-x-auto whitespace-pre-wrap break-all">
+                                                                            {log.prompt}
+                                                                        </pre>
+                                                                    </details>
+                                                                )}
+                                                                {log.llmResponse && (
+                                                                    <details className="text-[10px]">
+                                                                        <summary className="text-gray-500 cursor-pointer hover:text-gray-400">
+                                                                            📤 LLM 输出
+                                                                        </summary>
+                                                                        <pre className="mt-1 p-2 bg-gray-900/50 rounded text-green-400/80 overflow-x-auto whitespace-pre-wrap break-all">
+                                                                            {log.llmResponse}
+                                                                        </pre>
+                                                                    </details>
+                                                                )}
+                                                                {/* 显示价格和仓位 */}
+                                                                <div className="text-gray-500 text-[10px] pt-1 border-t border-gray-800/50">
+                                                                    💰 价格: ${log.price?.toLocaleString?.() || log.price} | 
+                                                                    🪙 BTC: {log.btcQty} | 
+                                                                    💵 USDT: {log.usdtBalance}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {log.type === 'status' && (
+                                                        <p className="text-gray-400 leading-relaxed text-[11px]">
+                                                            💰 价格: ${log.price?.toLocaleString?.() || log.price} | 
+                                                            🪙 BTC: {log.btcQty} | 
+                                                            💵 USDT: {log.usdtBalance} | 
+                                                            📊 总权益: ${log.totalEquity}
+                                                        </p>
+                                                    )}
+                                                    {log.type === 'error' && (
+                                                        <p className="text-red-400 leading-relaxed">{log.message}</p>
+                                                    )}
                                                 </div>
                                             )).reverse()
                                         )}
@@ -531,18 +591,55 @@ export default function ArenaPage() {
                                     </div>
                                 </>
                             ) : (
-                                <div className="space-y-2">
-                                    <label className="text-xs text-gray-500 uppercase">系统提示词 (System Prompt)</label>
-                                    <textarea
-                                        className="w-full h-64 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none font-sans"
-                                        placeholder="输入自定义的交易策略描述..."
-                                        value={allContestants.find(c => c.id === editingId)?.settings.systemPrompt}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, systemPrompt: val } } : c));
-                                        }}
-                                    />
-                                </div>
+                                <>
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-gray-500 uppercase">情报等级</label>
+                                        <select
+                                            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                            value={allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel || 'lite'}
+                                            onChange={(e) => {
+                                                const val = e.target.value as 'lite' | 'indicator' | 'strategy';
+                                                setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, intelligenceLevel: val } } : c));
+                                            }}
+                                        >
+                                            <option value="lite">🟢 Lite - 基础价格数据 (最少Token)</option>
+                                            <option value="indicator">🟡 Indicator - 含RSI/MA/MACD指标</option>
+                                            <option value="strategy">🔴 Strategy - 多时间框架+策略建议</option>
+                                        </select>
+                                        <p className="text-[10px] text-gray-500">
+                                            {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'lite' && '仅提供24h价格CSV，让LLM基于走势判断'}
+                                            {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'indicator' && '提供RSI、均线、MACD数值辅助决策'}
+                                            {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'strategy' && '完整分析框架：趋势→位置→信号→决策'}
+                                        </p>
+                                    </div>
+                                    {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'strategy' && (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                id="includeDaily"
+                                                checked={allContestants.find(c => c.id === editingId)?.settings.includeDaily || false}
+                                                onChange={(e) => {
+                                                    const val = e.target.checked;
+                                                    setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, includeDaily: val } } : c));
+                                                }}
+                                                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600"
+                                            />
+                                            <label htmlFor="includeDaily" className="text-xs text-gray-400">包含日线数据（更长Token）</label>
+                                        </div>
+                                    )}
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-gray-500 uppercase">系统提示词 (可选)</label>
+                                        <textarea
+                                            className="w-full h-32 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none font-sans"
+                                            placeholder="输入自定义的交易策略描述（留空使用默认）..."
+                                            value={allContestants.find(c => c.id === editingId)?.settings.systemPrompt || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, systemPrompt: val } } : c));
+                                            }}
+                                        />
+                                    </div>
+                                </>
                             )}
                             <button
                                 onClick={() => setEditingId(null)}
@@ -574,7 +671,9 @@ export default function ArenaPage() {
                                 name,
                                 type,
                                 color: colors[allContestants.length % colors.length],
-                                settings: type === 'llm-solo' ? { systemPrompt: DEFAULT_LLM_SYSTEM_PROMPT } : { investAmount: 500, intervalMinutes: 10080 }
+                                settings: type === 'llm-solo' 
+                                    ? { intelligenceLevel: 'indicator', systemPrompt: '' } 
+                                    : { investAmount: 500, intervalMinutes: 1440 }
                             };
                             setAllContestants([...allContestants, newContestant]);
                             setSelectedContestants([...selectedContestants, newId]);

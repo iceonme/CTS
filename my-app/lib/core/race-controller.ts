@@ -102,10 +102,18 @@ export class RaceController {
                 const progress = (currentTimestamp - this.config.start.getTime()) / (endTimestamp - this.config.start.getTime());
 
                 let equities: Record<string, number> | undefined = undefined;
+                let positions: Record<string, { btc: number; usdt: number }> | undefined = undefined;
                 if (isDrawTick) {
                     equities = {};
+                    positions = {};
                     this.contestants.forEach(c => {
                         equities![c.id] = c.getPortfolio().getTotalEquity();
+                        const overview = c.getPortfolio().getOverview();
+                        const btcPos = overview.positions.find((p: any) => p.symbol === this.config.symbol);
+                        positions![c.id] = {
+                            btc: btcPos ? btcPos.quantity : 0,
+                            usdt: overview.balance
+                        };
                     });
                 }
 
@@ -133,6 +141,7 @@ export class RaceController {
                         timestamp: currentTimestamp,
                         progress: progress * 100,
                         equities,
+                        positions,
                         logs: Object.keys(logs).length > 0 ? logs : undefined,
                         trades: Object.keys(trades).length > 0 ? trades : undefined
                     });

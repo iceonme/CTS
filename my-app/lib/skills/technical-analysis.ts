@@ -44,6 +44,50 @@ export function calculateSMA(prices: number[], period: number): number {
     return sum / period;
 }
 
+/**
+ * 计算指数移动平均线 (EMA)
+ */
+export function calculateEMA(prices: number[], period: number): number {
+    if (prices.length < period) return calculateSMA(prices, period);
+
+    const k = 2 / (period + 1);
+    let ema = calculateSMA(prices.slice(0, period), period);
+
+    for (let i = period; i < prices.length; i++) {
+        ema = (prices[i] - ema) * k + ema;
+    }
+
+    return ema;
+}
+
+/**
+ * 计算 MACD
+ */
+export function calculateMACD(prices: number[], fastPeriod: number = 12, slowPeriod: number = 26, signalPeriod: number = 9): { macd: number, signal: number, histogram: number } {
+    if (prices.length < slowPeriod + signalPeriod) {
+        return { macd: 0, signal: 0, histogram: 0 };
+    }
+
+    // 计算 MACD 线: EMA(fast) - EMA(slow)
+    // 为了得到 Signal 线，我们需要一系列的 MACD 值
+    const macdLine: number[] = [];
+    for (let i = slowPeriod; i <= prices.length; i++) {
+        const subPrices = prices.slice(0, i);
+        const fastEMA = calculateEMA(subPrices, fastPeriod);
+        const slowEMA = calculateEMA(subPrices, slowPeriod);
+        macdLine.push(fastEMA - slowEMA);
+    }
+
+    const signalLine = calculateEMA(macdLine, signalPeriod);
+    const currentMACD = macdLine[macdLine.length - 1];
+
+    return {
+        macd: currentMACD,
+        signal: signalLine,
+        histogram: currentMACD - signalLine
+    };
+}
+
 // ========== 技能定义 ==========
 
 export const TechAnalysisSkills: SkillDefinition[] = [

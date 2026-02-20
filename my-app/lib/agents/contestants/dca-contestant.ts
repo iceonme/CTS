@@ -38,9 +38,15 @@ export class DCAContestant implements Contestant {
 
     async onTick(): Promise<void> {
         const now = this.clock.now();
+        const timeSinceLastInvest = now - this.lastInvestTimestamp;
+        const intervalMs = this.intervalMinutes * 60 * 1000;
+
+        console.log(`[DCA:${this.name}] Tick at ${new Date(now).toISOString()}, lastInvest=${new Date(this.lastInvestTimestamp).toISOString()}, elapsed=${(timeSinceLastInvest/60000).toFixed(1)}min, interval=${this.intervalMinutes}min`);
 
         // 检查是否到了定投资间点
-        if (now - this.lastInvestTimestamp >= this.intervalMinutes * 60 * 1000) {
+        if (timeSinceLastInvest >= intervalMs) {
+            console.log(`[DCA:${this.name}] 🔔 定投时间到了！准备买入 $${this.investAmount}`);
+            
             // 1. 获取当前价格（通过 DB 限制当前时间可见性）
             const klines = await this.db.queryKlines({
                 symbol: this.symbol,
@@ -53,6 +59,8 @@ export class DCAContestant implements Contestant {
                 const currentPrice = klines[0].close;
                 const quantity = this.investAmount / currentPrice;
 
+                console.log(`[DCA:${this.name}] 💰 当前价格 $${currentPrice}, 可买 ${quantity.toFixed(6)} ${this.symbol}`);
+
                 // 3. 执行买入
                 const success = this.portfolio.executeTrade(
                     this.symbol,
@@ -63,11 +71,17 @@ export class DCAContestant implements Contestant {
                 );
 
                 if (success) {
-                    console.log(`[DCA] ${this.name} invested $${this.investAmount} at $${currentPrice}`);
+                    console.log(`[DCA:${this.name}] ✅ 定投成功！投入 $${this.investAmount} 买入 ${quantity.toFixed(6)} @ $${currentPrice}`);
+                } else {
+                    console.log(`[DCA:${this.name}] ❌ 定投失败（可能是余额不足）`);
                 }
                 // 无论是否成功买入，都记录本次尝试的时间戳，防止因余额不足导致的每回合重试
                 this.lastInvestTimestamp = now;
+            } else {
+                console.log(`[DCA:${this.name}] ⚠️ 无法获取价格数据`);
             }
+        } else {
+            console.log(`[DCA:${this.name}] ⏳ 还未到定投时间，还需等待 ${((intervalMs - timeSinceLastInvest)/60000).toFixed(1)} 分钟`);
         }
 
         // 定期记录快照
