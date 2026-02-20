@@ -45,6 +45,7 @@ export class RaceController {
             timestamp: number;
             progress: number;
             equities?: Record<string, number>;
+            positions?: Record<string, { btc: number; usdt: number }>;
             logs?: Record<string, any[]>;
             trades?: Record<string, any[]>;
         }) => void,

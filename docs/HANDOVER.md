@@ -68,30 +68,17 @@
 
 ## 📋 接下来要做 (W3)
 
-- [ ] **运行 7 天回测对比**: 对比三种 LLM 变体的收益率、交易频率、Token 成本
-- [ ] **策略权重调优**: 根据回测结果调整 Strategy 变体的信号权重
-- [ ] **MAS 小队运转**: 技术分析员信号生成 + PA 决策 + 交易执行
-- [ ] **评估系统**: 实时计算夏普比率、最大回撤等指标
+### 竞技场代码优化与修复 (2026-02-20)
+- **MACD 精准化**: 修复金叉死叉逻辑 Bug，提升策略信号可靠性。
+- **资产系统增强**: 实现了已实现盈亏统计 (Realized PnL) 及资产评估指标补全。
+- **性能革命**: 将指标历史计算复杂度从 O(N^2) 降至 O(N)，扫清全年回测障碍。
+- **档案同步**: 建立了 `docs/todo/history` 体系，归档了 [回测竞技场 Bug 修复历史报告](./todo/history/2026-02-20_backtest_bug_fix.md)。
 
 ---
 
-## 📚 参考文档
+## 📋 接下来要做 (W3)
 
-- [VISION.md](./VISION.md) - 产品愿景
-- [ROADMAP.md](./ROADMAP.md) - 版本需求
-- [architecture/](./architecture/) - 技术架构
-- [todo/](./todo/) - 任务列表
-
----
-
-## 🎯 W2 交付总结
-
-**已完成**: LLM 单兵三变体系统 + 分析层 Tools + Arena 集成
-
-**核心交付物**:
-- `lib/skills/tools/analysis-tools.ts` - 指标计算工具
-- `lib/agents/contestants/llm-solo-contestant.ts` - 三变体 LLM
-- `app/arena/page.tsx` - 增强版 Arena UI
-- `app/components/backtest/EquityChart.tsx` - 修复 Tooltip
-
-**测试状态**: ✅ 24+ 测试通过
+- [ ] **2025 全年回测跑通**: 拿到全年度竞技场 Baseline 数据。
+- [ ] **LLM 策略增强 (W3)**: 引入 Few-shot 学习和决策反思逻辑。
+- [ ] **MAS 小队运转**: 技术分析员信号生成 + PA 决策 + 交易执行。
+- [ ] **评估系统**: 计算夏普比率、最大回撤等进阶指标。

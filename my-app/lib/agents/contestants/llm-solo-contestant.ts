@@ -130,7 +130,7 @@ export class LLMSoloContestant implements Contestant {
     async onTick(): Promise<void> {
         const now = this.clock.now();
         this.logs = [];
-        
+
         const level = this.config.intelligenceLevel;
         console.log(`[LLMSolo-${level}:${this.name}] 📊 Tick at ${new Date(now).toISOString()}`);
 
@@ -148,15 +148,15 @@ export class LLMSoloContestant implements Contestant {
         }
 
         const currentPrice = allKlines[allKlines.length - 1].close;
-        
+
         // 获取仓位信息用于日志
         const portfolioState = this.portfolio.getOverview();
-        const position = portfolioState.positions.find((p:any)=>p.symbol===this.symbol);
+        const position = portfolioState.positions.find((p: any) => p.symbol === this.symbol);
         const btcQty = position ? position.quantity : 0;
-        
+
         console.log(`[LLMSolo-${level}:${this.name}] 💰 当前价格: $${currentPrice}, K线数: ${allKlines.length}`);
         console.log(`[LLMSolo-${level}:${this.name}] 💼 账户: USDT=${portfolioState.balance.toFixed(2)}, ${this.symbol}=${btcQty.toFixed(4)}, 总权益=${portfolioState.totalEquity.toFixed(2)}`);
-        
+
         // 记录状态日志
         this.logs.push({
             type: 'status',
@@ -166,7 +166,7 @@ export class LLMSoloContestant implements Contestant {
             totalEquity: portfolioState.totalEquity.toFixed(2),
             timestamp: now
         });
-        
+
         const prompt = await this.buildPromptByLevel(allKlines, portfolioState);
         console.log(`[LLMSolo-${level}:${this.name}] 📝 Prompt长度: ${prompt.length} 字符`);
         // DEBUG: 打印前500字符查看结构
@@ -195,7 +195,7 @@ export class LLMSoloContestant implements Contestant {
 
     private async buildPromptByLevel(klines: any[], portfolioState: any): Promise<string> {
         const level = this.config.intelligenceLevel;
-        
+
         switch (level) {
             case 'lite':
                 return this.buildLitePrompt(klines, portfolioState);
@@ -271,34 +271,47 @@ USDT: ${Math.round(state.balance)}, ${this.symbol}: ${position.quantity.toFixed(
         const currentSMA50 = calculateSMA(prices, 50);
         const currentMACD = calculateMACD(prices);
 
-        // 计算每根小时线的指标历史（从第50根开始，确保有足够数据计算SMA50）
+        // 预计算每根小时线采样点的索引（避免重复 findIndex）
+        const sampleIndices: number[] = [];
+        for (let i = allKlines.length - 1; i >= 0; i -= 60) {
+            sampleIndices.unshift(i);
+            if (sampleIndices.length >= 24) break;
+        }
+
+        // 一次性计算所有采样点需要的指标值（O(n) 级别）
+        // SMA 只需要最后 N 个值，直接在采样点计算即可
+        // RSI 使用增量算法，预计算到各采样点
         const indicatorHistory: { time: string; price: number; rsi: number; sma7: number; sma25: number; sma50: number; macdHist: number }[] = [];
-        
-        macroKlines.forEach((kline, idx) => {
-            // 找到这根K线在allKlines中的索引
-            const klineIndex = allKlines.findIndex((k: any) => k.timestamp === kline.timestamp);
-            if (klineIndex < 50) return; // 数据不足，跳过
-            
+
+        for (const klineIndex of sampleIndices) {
+            if (klineIndex < 50) continue; // 数据不足，跳过
+
+            const kline = allKlines[klineIndex];
             const pricesUpToNow = prices.slice(0, klineIndex + 1);
             const timeStr = new Date(kline.timestamp).toISOString().replace(/T/, ' ').slice(5, 16);
-            
+
+            // SMA 只需要最近 N 个值，使用 slice 取尾部即快速
+            const sma7Slice = pricesUpToNow.slice(-7);
+            const sma25Slice = pricesUpToNow.slice(-25);
+            const sma50Slice = pricesUpToNow.slice(-50);
+
             indicatorHistory.push({
                 time: timeStr,
                 price: Math.round(kline.close),
                 rsi: Math.round(calculateRSI(pricesUpToNow, 14)),
-                sma7: Math.round(calculateSMA(pricesUpToNow, 7)),
-                sma25: Math.round(calculateSMA(pricesUpToNow, 25)),
-                sma50: Math.round(calculateSMA(pricesUpToNow, 50)),
+                sma7: Math.round(sma7Slice.reduce((a, b) => a + b, 0) / sma7Slice.length),
+                sma25: Math.round(sma25Slice.reduce((a, b) => a + b, 0) / sma25Slice.length),
+                sma50: Math.round(sma50Slice.reduce((a, b) => a + b, 0) / sma50Slice.length),
                 macdHist: Math.round(calculateMACD(pricesUpToNow).histogram)
             });
-        });
+        }
 
         const csvBody = macroKlines.map(k => {
             const timeStr = new Date(k.timestamp).toISOString().replace(/T/, ' ').slice(5, 16);
             return `${timeStr},${Math.round(k.close)},${Math.round(k.volume)}`;
         }).join('\n');
 
-        const indicatorCSV = indicatorHistory.map(h => 
+        const indicatorCSV = indicatorHistory.map(h =>
             `${h.time},${h.price},${h.rsi},${h.sma7},${h.sma25},${h.sma50},${h.macdHist}`
         ).join('\n');
 
@@ -307,8 +320,8 @@ USDT: ${Math.round(state.balance)}, ${this.symbol}: ${position.quantity.toFixed(
         // RSI 状态
         const rsiStatus = currentRSI < 30 ? '超卖' : currentRSI > 70 ? '超买' : '中性';
         // 均线排列
-        const maAlignment = currentSMA7 > currentSMA25 && currentSMA25 > currentSMA50 ? '多头排列' : 
-                           currentSMA7 < currentSMA25 && currentSMA25 < currentSMA50 ? '空头排列' : '震荡';
+        const maAlignment = currentSMA7 > currentSMA25 && currentSMA25 > currentSMA50 ? '多头排列' :
+            currentSMA7 < currentSMA25 && currentSMA25 < currentSMA50 ? '空头排列' : '震荡';
         // MACD 趋势
         const macdStatus = currentMACD.histogram > 0 ? '看多' : '看空';
 
@@ -336,7 +349,7 @@ USDT: ${Math.round(state.balance)}, ${this.symbol}: ${position.quantity.toFixed(
     private async buildStrategyPrompt(allKlines: any[], state: any): Promise<string> {
         const prices = allKlines.map(k => k.close);
         const currentPrice = prices[prices.length - 1];
-        
+
         // 小时线指标
         const rsi = calculateRSI(prices, 14);
         const sma7 = calculateSMA(prices, 7);
@@ -428,7 +441,7 @@ USDT: ${Math.round(state.balance)} | ${this.symbol}: ${position.quantity.toFixed
         if (this.config.customSystemPrompt) {
             return `${this.config.customSystemPrompt}\n\n注意：reasoning 字段必须精简，不得超过 100 字。`;
         }
-        
+
         const level = this.config.intelligenceLevel;
         return SYSTEM_PROMPTS[level] || SYSTEM_PROMPTS.lite;
     }
@@ -443,7 +456,7 @@ USDT: ${Math.round(state.balance)} | ${this.symbol}: ${position.quantity.toFixed
             const decisionData = JSON.parse(jsonStr);
 
             const { decision, percentage, reasoning, confidence } = decisionData;
-            
+
             // 获取当前仓位信息
             const portfolioState = this.portfolio.getOverview();
             const position = portfolioState.positions.find((p: any) => p.symbol === this.symbol);

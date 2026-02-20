@@ -88,18 +88,32 @@ export function calculateMACD(
         macdLine.push(fastEMA - slowEMA);
     }
 
-    const signalLine = calculateEMA(macdLine, signalPeriod);
-    const currentMACD = macdLine[macdLine.length - 1];
-    const histogram = currentMACD - signalLine;
-
-    let trend: 'bullish' | 'bearish' | 'neutral' = 'neutral';
-    if (histogram > 0 && macdLine[macdLine.length - 2] < signalLine) {
-        trend = 'bullish';
-    } else if (histogram < 0 && macdLine[macdLine.length - 2] > signalLine) {
-        trend = 'bearish';
+    // 计算完整的 signal 序列，以便做交叉检测
+    const signalLine: number[] = [];
+    for (let i = signalPeriod; i <= macdLine.length; i++) {
+        signalLine.push(calculateEMA(macdLine.slice(0, i), signalPeriod));
     }
 
-    return { macd: currentMACD, signal: signalLine, histogram, trend };
+    const currentMACD = macdLine[macdLine.length - 1];
+    const currentSignal = signalLine[signalLine.length - 1];
+    const histogram = currentMACD - currentSignal;
+
+    // 金叉/死叉判断：比较当前和前一根的 MACD vs Signal
+    let trend: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+    if (signalLine.length >= 2 && macdLine.length >= macdLine.length) {
+        const prevMACD = macdLine[macdLine.length - 2];
+        const prevSignal = signalLine[signalLine.length - 2];
+        // 金叉：前一根 MACD <= Signal，当前 MACD > Signal
+        if (prevMACD <= prevSignal && currentMACD > currentSignal) {
+            trend = 'bullish';
+        }
+        // 死叉：前一根 MACD >= Signal，当前 MACD < Signal
+        else if (prevMACD >= prevSignal && currentMACD < currentSignal) {
+            trend = 'bearish';
+        }
+    }
+
+    return { macd: currentMACD, signal: currentSignal, histogram, trend };
 }
 
 // ============================================
@@ -166,8 +180,8 @@ export function createAnalysisTools(marketDb: any): Tool[] {
             type: 'object',
             properties: {
                 symbol: { type: 'string', description: 'Trading symbol' },
-                periods: { 
-                    type: 'array', 
+                periods: {
+                    type: 'array',
                     items: { type: 'number' },
                     description: 'MA periods to calculate, default [7, 25, 50]',
                     default: [7, 25, 50]
@@ -195,7 +209,7 @@ export function createAnalysisTools(marketDb: any): Tool[] {
 
             const sma: Record<number, number> = {};
             const ema: Record<number, number> = {};
-            
+
             for (const p of periods) {
                 sma[p] = Math.round(calculateSMA(prices, p) * 100) / 100;
                 ema[p] = Math.round(calculateEMA(prices, p) * 100) / 100;

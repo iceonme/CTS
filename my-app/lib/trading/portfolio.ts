@@ -49,6 +49,7 @@ export class VirtualPortfolio {
   private trades: TradeRecord[] = [];
   private snapshots: PortfolioSnapshot[] = [];
   private clock: IClock;
+  private totalRealizedPnl: number = 0;
 
   constructor(initialCapital: number, clock: IClock) {
     this.balance = initialCapital;
@@ -71,7 +72,7 @@ export class VirtualPortfolio {
       this.balance -= totalUsdt;
 
       const currentPos = this.positions.get(symbol) || {
-        id: `pos-${symbol}-${Date.now()}`,
+        id: `pos-${symbol}-${now}`,
         symbol,
         side: 'long' as const,
         quantity: 0,
@@ -101,6 +102,10 @@ export class VirtualPortfolio {
       }
       this.balance += totalUsdt;
 
+      // 计算已实现盈亏：(卖出价 - 均价) × 卖出数量
+      const realized = (price - currentPos.avgPrice) * quantity;
+      this.totalRealizedPnl += realized;
+
       const newQuantity = currentPos.quantity - quantity;
       if (newQuantity <= 0.00000001) {
         this.positions.delete(symbol);
@@ -117,7 +122,7 @@ export class VirtualPortfolio {
     }
 
     this.trades.push({
-      id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      id: `trade-${now}-${Math.random().toString(36).substr(2, 5)}`,
       symbol,
       side,
       price,
@@ -184,7 +189,7 @@ export class VirtualPortfolio {
       initialBalance: this.initialCapital,
       totalReturn: this.getTotalEquity() - this.initialCapital,
       totalReturnPercent: ((this.getTotalEquity() - this.initialCapital) / this.initialCapital) * 100,
-      totalRealizedPnl: 0, // 简化处理
+      totalRealizedPnl: this.totalRealizedPnl,
       totalUnrealizedPnl: Array.from(this.positions.values()).reduce((sum, p) => sum + p.unrealizedPnl, 0),
       trades: this.trades.map(t => ({
         ...t,
