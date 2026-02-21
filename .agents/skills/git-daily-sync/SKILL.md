@@ -11,13 +11,13 @@ Simple two-operation workflow: **Download** (pull) at start, **Upload** (push) a
 
 - **Owner**: iceonme
 - **Repo**: cts
-- **Token**: <YOUR_GITHUB_TOKEN>
+- **Token**: 请从环境变量或安全存储中获取
 
 ## Setup (First Time - Already Done)
 
 ```bash
 # Remote URL already configured with token
-git remote set-url origin https://iceonme:<YOUR_GITHUB_TOKEN>@github.com/iceonme/cts.git
+git remote set-url origin https://iceonme:<TOKEN>@github.com/iceonme/cts.git
 ```
 
 ## Operations

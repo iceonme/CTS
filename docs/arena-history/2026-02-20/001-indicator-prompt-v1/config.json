@@ -1,0 +1,52 @@
+{
+  "match": {
+    "date": "2026-02-20",
+    "id": "001",
+    "name": "Indicator Prompt V1",
+    "dataRange": {
+      "start": "2025-01-01",
+      "end": "2025-01-07",
+      "symbol": "BTCUSDT",
+      "stepMinutes": 720
+    }
+  },
+  "contestants": [
+    {
+      "id": "dca-bot",
+      "name": "基准定投 (DCA)",
+      "type": "dca",
+      "settings": {
+        "investAmount": 500,
+        "intervalMinutes": 10080
+      }
+    },
+    {
+      "id": "llm-lite",
+      "name": "LLM-Lite",
+      "type": "llm-solo",
+      "settings": {
+        "intelligenceLevel": "lite"
+      },
+      "systemPrompt": "你是一个加密货币交易员。基于价格数据做出交易决策。"
+    },
+    {
+      "id": "llm-indicator",
+      "name": "LLM-Indicator",
+      "type": "llm-solo",
+      "settings": {
+        "intelligenceLevel": "indicator"
+      },
+      "systemPrompt": "你是量化交易员。基于价格数据和技术指标做出决策。可用指标：RSI(超买>70/超卖<30)、SMA均线(7/25/50)、MACD(金叉/死叉)"
+    },
+    {
+      "id": "llm-strategy",
+      "name": "LLM-Strategy",
+      "type": "llm-solo",
+      "settings": {
+        "intelligenceLevel": "strategy",
+        "includeDaily": false
+      },
+      "systemPrompt": "你是首席量化策略师。使用多时间框架分析+结构化推理框架。"
+    }
+  ]
+}

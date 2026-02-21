@@ -10,6 +10,7 @@ const CONTESTANTS_METADATA = [
     { id: 'llm-lite', name: 'LLM-Lite', color: '#a855f7' }, // Purple
     { id: 'llm-indicator', name: 'LLM-Indicator', color: '#ec4899' }, // Pink
     { id: 'llm-strategy', name: 'LLM-Strategy', color: '#f59e0b' }, // Amber
+    { id: 'llm-scalper', name: 'LLM-Scalper', color: '#ef4444' }, // Red
 ];
 
 export default function ArenaPage() {
@@ -29,6 +30,8 @@ export default function ArenaPage() {
             return { ...c, type: 'llm-solo', settings: { intelligenceLevel: 'indicator', systemPrompt: '' } };
         } else if (c.id === 'llm-strategy') {
             return { ...c, type: 'llm-solo', settings: { intelligenceLevel: 'strategy', includeDaily: false, systemPrompt: '' } };
+        } else if (c.id === 'llm-scalper') {
+            return { ...c, type: 'llm-solo', settings: { intelligenceLevel: 'scalper', systemPrompt: '' } };
         }
         return c;
     }));
@@ -47,7 +50,7 @@ export default function ArenaPage() {
         end: '2025-01-07',
         stepMinutes: 720, // 默认12小时
     });
-    const [selectedContestants, setSelectedContestants] = useState<string[]>(['dca-bot', 'llm-lite', 'llm-indicator', 'llm-strategy']);
+    const [selectedContestants, setSelectedContestants] = useState<string[]>(['dca-bot', 'llm-lite', 'llm-indicator', 'llm-strategy', 'llm-scalper']);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [isAdding, setIsAdding] = useState(false);
 
@@ -519,8 +522,36 @@ export default function ArenaPage() {
                     {/* 详细指标表格 */}
                     {results.length > 0 && (
                         <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-                            <div className="p-4 border-b border-gray-800 bg-gray-800/20">
+                            <div className="p-4 border-b border-gray-800 bg-gray-800/20 flex justify-between items-center">
                                 <h3 className="text-sm font-bold">最终战报</h3>
+                                <button
+                                    onClick={() => {
+                                        const exportData = {
+                                            config: {
+                                                date: new Date().toISOString().split('T')[0],
+                                                symbol: config.symbol,
+                                                start: config.start,
+                                                end: config.end,
+                                                stepMinutes: config.stepMinutes,
+                                                contestants: allContestants.filter(c => selectedContestants.includes(c.id))
+                                            },
+                                            results: results,
+                                            history: history,
+                                            trades: trades,
+                                            logs: logs
+                                        };
+                                        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `arena-match-${new Date().toISOString().split('T')[0]}.json`;
+                                        a.click();
+                                        URL.revokeObjectURL(url);
+                                    }}
+                                    className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors"
+                                >
+                                    📥 导出比赛数据
+                                </button>
                             </div>
                             <table className="w-full text-sm text-left">
                                 <thead className="text-xs text-gray-500 uppercase bg-gray-800/10">

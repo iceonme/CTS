@@ -9,10 +9,10 @@ import { calculateRSI, calculateSMA, calculateMACD } from '../../skills/tools/an
 // 情报等级配置类型定义
 // ============================================
 
-export type IntelligenceLevel = 'lite' | 'indicator' | 'strategy';
+export type IntelligenceLevel = 'lite' | 'indicator' | 'strategy' | 'scalper';
 
 export interface LLMSoloConfig {
-    /** 情报等级: lite=最少, indicator=带指标, strategy=带策略建议 */
+    /** 情报等级: lite=最少, indicator=带指标, strategy=带策略建议, scalper=高频波段 */
     intelligenceLevel?: IntelligenceLevel;
     /** 自定义系统提示词 */
     customSystemPrompt?: string;
@@ -34,14 +34,26 @@ const SYSTEM_PROMPTS: Record<IntelligenceLevel, string> = {
   "confidence": 0-100
 }`,
 
-    indicator: `你是量化交易员。基于价格数据和技术指标做出决策。
-可用指标：RSI(超买>70/超卖<30)、SMA均线(7/25/50)、MACD(金叉/死叉)
+    indicator: `你是加密货币交易员。基于价格数据和技术指标判断趋势并做出交易决策。
+
+【你会收到的信息】
+1. 当前价格 & 24h 价格走势
+2. RSI(14)：衡量价格强弱(0-100)
+3. SMA均线(7/25/50)：识别趋势方向
+4. MACD：柱状图和金叉/死叉信号
+5. 指标历史：24h各指标变化轨迹
+6. 账户状态：USDT余额、BTC持仓、总权益
+
+【你的任务】
+- 自主分析趋势，决定买/卖/等待
+- 自己判断仓位比例(0-100%)
+- 目标：盈利最大化
 
 你必须以 JSON 格式回复：
 {
   "decision": "BUY" | "SELL" | "WAIT",
   "percentage": 0.0-1.0,
-  "reasoning": "指标分析→决策逻辑(80字内)",
+  "reasoning": "分析逻辑和决策理由(100字内)",
   "confidence": 0-100
 }`,
 
@@ -69,6 +81,34 @@ const SYSTEM_PROMPTS: Record<IntelligenceLevel, string> = {
     "position": "oversold/fair/overbought",
     "signal_strength": 1-10
   }
+}`,
+
+    scalper: `你是高频波段交易员。专注于捕捉小波动，积少成多。
+
+【交易理念】
+- 灵活进出：抓住每一个小波段机会，小利即出
+- 逢低吸纳：回调时分批建仓，不追高
+- 高频交易：保持交易活跃度，积少成多
+- 自主决策：根据市场状态自己判断买卖时机和仓位
+
+【你会收到的信息】
+1. 当前价格 & 24h 价格走势
+2. 技术指标：RSI、SMA、MACD 当前值和历史轨迹
+3. 价格相对24h最高/最低的位置
+4. 当前持仓状态：成本价、浮盈亏
+
+【自主决策权】
+- 买卖时机：你自己判断什么时候买/卖/等待
+- 仓位比例：你自己决定每次用多少资金（0-100%）
+- 分批策略：你自己决定分几批、每批多少
+- 目标：盈利最大化，没有固定规则束缚
+
+【输出格式】
+{
+  "decision": "BUY" | "SELL" | "WAIT",
+  "percentage": 0.0-1.0,
+  "reasoning": "分析逻辑和决策理由(100字内)",
+  "confidence": 0-100
 }`
 };
 
@@ -203,6 +243,8 @@ export class LLMSoloContestant implements Contestant {
                 return this.buildIndicatorPrompt(klines, portfolioState);
             case 'strategy':
                 return this.buildStrategyPrompt(klines, portfolioState);
+            case 'scalper':
+                return this.buildScalperPrompt(klines, portfolioState);
             default:
                 return this.buildLitePrompt(klines, portfolioState);
         }
@@ -434,6 +476,105 @@ ${dailySection}
 
 【账户状态】
 USDT: ${Math.round(state.balance)} | ${this.symbol}: ${position.quantity.toFixed(4)} | 总权益: ${Math.round(state.totalEquity)}`;
+    }
+
+    /** Scalper: 高频波段策略，使用Indicator的数据输入 + Scalper的交易理念 */
+    private buildScalperPrompt(allKlines: any[], state: any): string {
+        // ========== Indicator 的数据输入部分 ==========
+        const prices = allKlines.map(k => k.close);
+        const firstPrice = allKlines[0].open;
+        const lastPrice = prices[prices.length - 1];
+        const change24h = ((lastPrice - firstPrice) / firstPrice) * 100;
+        const high24h = Math.max(...allKlines.map(k => k.high));
+        const low24h = Math.min(...allKlines.map(k => k.low));
+        const volume24h = allKlines.reduce((sum, k) => sum + k.volume, 0);
+
+        // 抽样24根小时线
+        const macroKlines: any[] = [];
+        for (let i = allKlines.length - 1; i >= 0; i -= 60) {
+            macroKlines.unshift(allKlines[i]);
+            if (macroKlines.length >= 24) break;
+        }
+
+        // 计算当前指标
+        const currentRSI = calculateRSI(prices, 14);
+        const currentSMA7 = calculateSMA(prices, 7);
+        const currentSMA25 = calculateSMA(prices, 25);
+        const currentSMA50 = calculateSMA(prices, 50);
+        const currentMACD = calculateMACD(prices);
+
+        // 预计算每根小时线采样点的索引
+        const sampleIndices: number[] = [];
+        for (let i = allKlines.length - 1; i >= 0; i -= 60) {
+            sampleIndices.unshift(i);
+            if (sampleIndices.length >= 24) break;
+        }
+
+        // 24h 指标历史
+        const indicatorHistory: { time: string; price: number; rsi: number; sma7: number; sma25: number; sma50: number; macdHist: number }[] = [];
+        for (const klineIndex of sampleIndices) {
+            if (klineIndex < 50) continue;
+            const kline = allKlines[klineIndex];
+            const pricesUpToNow = prices.slice(0, klineIndex + 1);
+            const timeStr = new Date(kline.timestamp).toISOString().replace(/T/, ' ').slice(5, 16);
+            const sma7Slice = pricesUpToNow.slice(-7);
+            const sma25Slice = pricesUpToNow.slice(-25);
+            const sma50Slice = pricesUpToNow.slice(-50);
+            indicatorHistory.push({
+                time: timeStr,
+                price: Math.round(kline.close),
+                rsi: Math.round(calculateRSI(pricesUpToNow, 14)),
+                sma7: Math.round(sma7Slice.reduce((a, b) => a + b, 0) / sma7Slice.length),
+                sma25: Math.round(sma25Slice.reduce((a, b) => a + b, 0) / sma25Slice.length),
+                sma50: Math.round(sma50Slice.reduce((a, b) => a + b, 0) / sma50Slice.length),
+                macdHist: Math.round(calculateMACD(pricesUpToNow).histogram)
+            });
+        }
+
+        const csvBody = macroKlines.map(k => {
+            const timeStr = new Date(k.timestamp).toISOString().replace(/T/, ' ').slice(5, 16);
+            return `${timeStr},${Math.round(k.close)},${Math.round(k.volume)}`;
+        }).join('\n');
+
+        const indicatorCSV = indicatorHistory.map(h =>
+            `${h.time},${h.price},${h.rsi},${h.sma7},${h.sma25},${h.sma50},${h.macdHist}`
+        ).join('\n');
+
+        // ========== Scalper 的持仓和交易建议部分 ==========
+        const position = state.positions.find((p: any) => p.symbol === this.symbol) || { quantity: 0, avgPrice: 0 };
+        const holdingCost = position.avgPrice;
+        const currentPrice = lastPrice;
+        const unrealizedPnl = holdingCost > 0 ? ((currentPrice - holdingCost) / holdingCost) * 100 : 0;
+        
+        // 当前位置（0-100%，相对24h范围）
+        const positionInRange = ((currentPrice - low24h) / (high24h - low24h)) * 100;
+
+        return `【${this.symbol} 波段交易分析】
+当前价: ${Math.round(currentPrice)} | 24h涨跌: ${change24h.toFixed(1)}%
+24h区间: ${Math.round(low24h)} - ${Math.round(high24h)} | 当前位置: ${positionInRange.toFixed(1)}%
+
+【当前技术指标】
+RSI(14): ${Math.round(currentRSI)} | SMA: ${Math.round(currentSMA7)}/${Math.round(currentSMA25)}/${Math.round(currentSMA50)}
+MACD: ${Math.round(currentMACD.histogram)}
+
+【价格数据 (CSV)】
+T(UTC),P,V
+${csvBody}
+
+【指标历史 (CSV)】
+T(UTC),P,RSI,SMA7,SMA25,SMA50,MACD_H
+${indicatorCSV}
+
+【持仓状态】
+${this.symbol}: ${position.quantity.toFixed(4)} | 成本: ${Math.round(holdingCost)} | 浮盈: ${unrealizedPnl > 0 ? '+' : ''}${unrealizedPnl.toFixed(2)}%
+USDT: ${Math.round(state.balance)} | 总权益: ${Math.round(state.totalEquity)}
+
+【分析角度参考】（供你自主判断）
+- 浮盈状态：当前盈利还是亏损？幅度多大？
+- 价格位置：相对24h高低点处于什么位置？
+- 指标状态：RSI是否极端？均线排列如何？MACD趋势？
+- 波动机会：近期波动幅度是否提供交易空间？
+- 你自己决定：买/卖/等待、仓位大小、分批策略`;
     }
 
     private buildSystemPrompt(): string {
