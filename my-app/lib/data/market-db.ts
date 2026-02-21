@@ -46,13 +46,16 @@ function exec(db: duckdb.Database, sql: string): Promise<void> {
   });
 }
 
+const g = globalThis as any;
+
 export class MarketDatabase {
   private static instance: MarketDatabase | null = null;
-  private db: duckdb.Database;
-  private conn: duckdb.Connection;
+  private db!: duckdb.Database;
+  private conn!: duckdb.Connection;
   private dbPath: string;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
+  private readOnly: boolean = false;
 
   constructor(dbPath?: string) {
     const dataDir = path.join(process.cwd(), 'data');
@@ -60,15 +63,26 @@ export class MarketDatabase {
       fs.mkdirSync(dataDir, { recursive: true });
     }
     this.dbPath = dbPath || path.join(dataDir, 'market-v2.db');
-    this.db = new duckdb.Database(this.dbPath);
+
+    // 强制使用 READ_ONLY 模式检测（或者直接打开，不尝试两次避免冲突）
+    // 在 Node 进程中，一旦一个 handle 打开了，其它 handle 必须匹配模式
+    try {
+      this.db = new duckdb.Database(this.dbPath);
+      this.readOnly = false;
+    } catch (e: any) {
+      console.warn(`[MarketDB] Primary connection failed: ${e.message}. Trying READ_ONLY.`);
+      this.db = new duckdb.Database(this.dbPath, { access_mode: 'READ_ONLY' });
+      this.readOnly = true;
+    }
     this.conn = this.db.connect();
   }
 
   static getInstance(dbPath?: string): MarketDatabase {
-    if (!MarketDatabase.instance) {
-      MarketDatabase.instance = new MarketDatabase(dbPath);
+    // 统一使用一个稳定的 Key
+    if (!g.__market_db_singleton) {
+      g.__market_db_singleton = new MarketDatabase(dbPath);
     }
-    return MarketDatabase.instance;
+    return g.__market_db_singleton;
   }
 
   private async execSql(sql: string): Promise<void> {
@@ -98,7 +112,16 @@ export class MarketDatabase {
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
+      // 1. 如果构造函数已经确定是只读，直接跳过
+      if (this.readOnly) {
+        console.log('[MarketDB] Running in READ_ONLY mode, skipping schema creation.');
+        this.initialized = true;
+        return;
+      }
+
       try {
+        console.log('[MarketDB] Attempting schema initialization...');
+        // 2. 尝试初始化 schema
         await this.execSql(`
           CREATE TABLE IF NOT EXISTS klines (
             symbol VARCHAR,
@@ -120,10 +143,20 @@ export class MarketDatabase {
           CREATE INDEX IF NOT EXISTS idx_klines_time 
           ON klines(symbol, interval, timestamp);
         `);
+        console.log('[MarketDB] Schema initialized (or verified).');
         this.initialized = true;
-      } catch (e) {
-        this.initPromise = null;
-        throw e;
+      } catch (e: any) {
+        console.warn(`[MarketDB] Init error caught: ${e.message}`);
+        // 3. 如果运行中发现是只读模式（构造函数可能由于静默失败没发现）
+        if (e.message?.includes('read-only mode') || e.message?.includes('CREATE')) {
+          console.warn('[MarketDB] Confirmed READ_ONLY mode, proceeding anyway.');
+          this.readOnly = true;
+          this.initialized = true;
+        } else {
+          console.error('[MarketDB] Critical init error:', e);
+          this.initPromise = null;
+          throw e;
+        }
       }
     })();
 
@@ -197,6 +230,11 @@ export class MarketDatabase {
       volume: row.volume, quoteVolume: row.quoteVolume,
       takerBuyBaseVolume: row.takerBuyBaseVolume, tradeCount: row.tradeCount
     })).reverse();
+  }
+
+  async queryRaw(sql: string): Promise<any[]> {
+    await this.init();
+    return this.querySql(sql);
   }
 
   async getStats(): Promise<{ totalRecords: number; symbols: string[] }> {

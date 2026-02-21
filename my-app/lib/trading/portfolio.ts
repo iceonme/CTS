@@ -178,13 +178,62 @@ export class VirtualPortfolio {
     return snapshot;
   }
 
+  /**
+   * 计算量化指标 (夏普比率, 最大回撤)
+   */
+  calculateMetrics() {
+    if (this.snapshots.length < 2) {
+      return { sharpeRatio: 0, maxDrawdown: 0 };
+    }
+
+    // 1. 计算最大回撤 (Max Drawdown)
+    let maxEquity = -Infinity;
+    let maxDd = 0;
+
+    for (const s of this.snapshots) {
+      if (s.totalEquity > maxEquity) {
+        maxEquity = s.totalEquity;
+      }
+      const dd = (maxEquity - s.totalEquity) / maxEquity;
+      if (dd > maxDd) {
+        maxDd = dd;
+      }
+    }
+
+    // 2. 计算夏普比率 (Sharpe Ratio) - 简化版 (基于采样点收益率)
+    // 假设无风险利率为 0
+    const returns: number[] = [];
+    for (let i = 1; i < this.snapshots.length; i++) {
+      const r = (this.snapshots[i].totalEquity - this.snapshots[i - 1].totalEquity) / this.snapshots[i - 1].totalEquity;
+      returns.push(r);
+    }
+
+    const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const stdDev = Math.sqrt(
+      returns.map(x => Math.pow(x - avgReturn, 2)).reduce((a, b) => a + b, 0) / returns.length
+    );
+
+    // 年化因子 (假设快照是按 stepMinutes 采集的，这里做一个通用的比例估算)
+    // 如果 stdDev 为 0，夏普也为 0
+    const sharpe = stdDev === 0 ? 0 : (avgReturn / stdDev) * Math.sqrt(returns.length);
+
+    return {
+      sharpeRatio: Number(sharpe.toFixed(4)),
+      maxDrawdown: Number((maxDd * 100).toFixed(2)) // 百分比
+    };
+  }
+
   getOverview() {
+    const metrics = this.calculateMetrics();
     return {
       balance: this.balance,
       totalEquity: this.getTotalEquity(),
       positions: Array.from(this.positions.values()),
       tradeCount: this.trades.length,
       snapshots: this.snapshots.length,
+      // 量化指标
+      sharpeRatio: metrics.sharpeRatio,
+      maxDrawdown: metrics.maxDrawdown,
       // 兼容旧接口的字段
       initialBalance: this.initialCapital,
       totalReturn: this.getTotalEquity() - this.initialCapital,

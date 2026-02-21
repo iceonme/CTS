@@ -9,6 +9,8 @@ export interface RaceResult {
     finalEquity: number;
     totalReturn: number;
     tradeCount: number;
+    sharpeRatio: number;
+    maxDrawdown: number;
 }
 
 /**
@@ -176,7 +178,9 @@ export class RaceController {
                 name: c.name,
                 finalEquity: overview.totalEquity,
                 totalReturn: (overview.totalEquity - initialCapital) / initialCapital,
-                tradeCount: overview.tradeCount
+                tradeCount: overview.tradeCount,
+                sharpeRatio: (overview as any).sharpeRatio || 0,
+                maxDrawdown: (overview as any).maxDrawdown || 0
             };
         });
     }
