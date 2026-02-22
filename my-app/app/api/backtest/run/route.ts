@@ -4,6 +4,7 @@ import { RaceController } from '@/lib/core/race-controller';
 import { DCAContestant } from '@/lib/agents/contestants/dca-contestant';
 import { MASContestant } from '@/lib/agents/contestants/mas-contestant';
 import { LLMSoloContestant } from '@/lib/agents/contestants/llm-solo-contestant';
+import { GridContestant } from '@/lib/agents/contestants/grid-contestant';
 import { MiniMaxClient } from '@/lib/core/minimax';
 
 export async function POST(req: NextRequest) {
@@ -59,14 +60,37 @@ export async function POST(req: NextRequest) {
                 controller.addContestant(masSquad);
             }
 
-            // 3. LLM 单兵 (支持多种ID格式：llm-solo, llm-lite, llm-indicator, llm-strategy)
+            // 3. Grid 高抛低吸选手
+            if (contestantId === 'grid-bot' || (typeof conf === 'object' && conf.type === 'grid')) {
+                const gridBot = new GridContestant(
+                    typeof conf === 'string' ? 'grid-bot' : conf.id,
+                    typeof conf === 'string' ? '高抛低吸 (Grid)' : (conf.name || '自定义网格'),
+                    db,
+                    {
+                        symbol,
+                        tradeAmount: settings.tradeAmount || initialCapital / (settings.gridLevels || 3),
+                        gridLevels: settings.gridLevels || 3,
+                        pivotN: settings.pivotN || 3,
+                        windowDays: settings.windowDays || 7,
+                        volatilityMin: settings.volatilityMin || 3,
+                        volatilityMax: settings.volatilityMax || 5,
+                        stopLossPercent: settings.stopLossPercent || 2,
+                        takeProfitPercent: settings.takeProfitPercent || 4,
+                        recalcIntervalMinutes: settings.recalcIntervalMinutes || 60,
+                    }
+                );
+                controller.addContestant(gridBot);
+                console.log(`[Backtest API] Added Grid contestant: ${gridBot.name}`);
+            }
+
+            // 4. LLM 单兵 (支持多种ID格式：llm-solo, llm-lite, llm-indicator, llm-strategy)
             if (contestantId.startsWith('llm-') || (typeof conf === 'object' && conf.type === 'llm-solo')) {
                 const minimaxKey = process.env.MINIMAX_API_KEY;
                 const minimaxGroupId = process.env.MINIMAX_GROUP_ID;
 
                 if (minimaxKey) {
                     const minimax = new MiniMaxClient(minimaxKey, minimaxGroupId);
-                    
+
                     // 构建 LLMSoloConfig
                     const llmConfig = settings.intelligenceLevel ? {
                         intelligenceLevel: settings.intelligenceLevel as 'lite' | 'indicator' | 'strategy',
@@ -105,7 +129,7 @@ export async function POST(req: NextRequest) {
                             return JSON.stringify({ decision: 'WAIT', percentage: 0, reasoning: '模拟模式：观望', confidence: 50 });
                         }
                     };
-                    
+
                     const llmConfig = settings.intelligenceLevel ? {
                         intelligenceLevel: settings.intelligenceLevel as 'lite' | 'indicator' | 'strategy',
                         includeDaily: settings.includeDaily || false,

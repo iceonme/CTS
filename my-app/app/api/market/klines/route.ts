@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const before = searchParams.get('before');
     const startParam = searchParams.get('start');
     const endParam = searchParams.get('end');
-    const maxLimit = (startParam && endParam) ? 2000 : 500;
+    const maxLimit = (startParam && endParam) ? 50000 : 500;
     const limit = Math.min(parseInt(searchParams.get('limit') || '150'), maxLimit);
 
     const intervalMap: Record<string, number> = {

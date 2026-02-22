@@ -85,7 +85,7 @@ export default function KlinePriceChart({
     const progressLineDivRef = useRef<HTMLDivElement | null>(null);
     const markersRef = useRef<any>(null);
 
-    const [interval, setInterval_] = useState<'15m' | '1h' | '1d'>('1h');
+    const [interval, setInterval_] = useState<'15m' | '1h' | '1d'>('15m');
     const [allKlineData, setAllKlineData] = useState<KlineDataPoint[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -95,7 +95,12 @@ export default function KlinePriceChart({
         try {
             const startMs = new Date(startTime).getTime();
             const endMs = new Date(endTime).getTime();
-            const url = `/api/market/klines?symbol=${symbol}&interval=${klineInterval}&start=${startMs}&end=${endMs}&limit=2000`;
+            const rangeDays = (endMs - startMs) / (24 * 60 * 60 * 1000);
+            // 根据 interval 和日期范围动态计算所需条数
+            const intervalsPerDay: Record<string, number> = { '15m': 96, '1h': 24, '1d': 1 };
+            const neededBars = Math.ceil(rangeDays * (intervalsPerDay[klineInterval] || 24)) + 50;
+            const limit = Math.min(neededBars, 50000);
+            const url = `/api/market/klines?symbol=${symbol}&interval=${klineInterval}&start=${startMs}&end=${endMs}&limit=${limit}`;
             const res = await fetch(url);
             const json = await res.json();
             if (json.success && json.data) {

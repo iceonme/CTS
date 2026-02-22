@@ -7,6 +7,7 @@ import { DEFAULT_LLM_SYSTEM_PROMPT } from '@/lib/agents/contestants/llm-solo-con
 
 const CONTESTANTS_METADATA = [
     { id: 'dca-bot', name: '基准定投 (DCA)', color: '#3b82f6' }, // Blue
+    { id: 'grid-bot', name: '高抛低吸 (Grid)', color: '#14b8a6' }, // Teal
     { id: 'mas-squad', name: 'MAS 协作小队', color: '#10b981' }, // Emerald
     { id: 'llm-lite', name: 'LLM-Lite', color: '#a855f7' }, // Purple
     { id: 'llm-indicator', name: 'LLM-Indicator', color: '#ec4899' }, // Pink
@@ -23,6 +24,8 @@ export default function ArenaPage() {
     const [allContestants, setAllContestants] = useState<any[]>(CONTESTANTS_METADATA.map(c => {
         if (c.id === 'dca-bot') {
             return { ...c, type: 'dca', settings: { investAmount: 500, intervalMinutes: 10080 } }; // 7天
+        } else if (c.id === 'grid-bot') {
+            return { ...c, type: 'grid', settings: { gridLevels: 3, pivotN: 3, windowDays: 7, volatilityMin: 2, volatilityMax: 50, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60 } };
         } else if (c.id === 'mas-squad') {
             return { ...c, type: 'mas', settings: {} };
         } else if (c.id === 'llm-lite') {
@@ -677,85 +680,150 @@ export default function ArenaPage() {
                                 <button onClick={() => setEditingId(null)} className="text-gray-500 hover:text-white">✕</button>
                             </div>
                             <div className="p-6 space-y-4">
-                                {allContestants.find(c => c.id === editingId)?.type === 'dca' ? (
-                                    <>
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-gray-500 uppercase">定投金额 (USDT)</label>
-                                            <input
-                                                type="number"
-                                                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-                                                value={allContestants.find(c => c.id === editingId)?.settings.investAmount}
-                                                onChange={(e) => {
-                                                    const val = parseFloat(e.target.value);
-                                                    setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, investAmount: val } } : c));
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-gray-500 uppercase">时间间隔 (分钟)</label>
-                                            <input
-                                                type="number"
-                                                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-                                                value={allContestants.find(c => c.id === editingId)?.settings.intervalMinutes}
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value);
-                                                    setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, intervalMinutes: val } } : c));
-                                                }}
-                                            />
-                                            <p className="text-[10px] text-gray-500 italic">提示: 10080 分钟 = 1 周, 1440 分钟 = 1 天</p>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-gray-500 uppercase">情报等级</label>
-                                            <select
-                                                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-                                                value={allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel || 'lite'}
-                                                onChange={(e) => {
-                                                    const val = e.target.value as 'lite' | 'indicator' | 'strategy';
-                                                    setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, intelligenceLevel: val } } : c));
-                                                }}
-                                            >
-                                                <option value="lite">🟢 Lite - 基础价格数据 (最少Token)</option>
-                                                <option value="indicator">🟡 Indicator - 含RSI/MA/MACD指标</option>
-                                                <option value="strategy">🔴 Strategy - 多时间框架+策略建议</option>
-                                            </select>
-                                            <p className="text-[10px] text-gray-500">
-                                                {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'lite' && '仅提供24h价格CSV，让LLM基于走势判断'}
-                                                {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'indicator' && '提供RSI、均线、MACD数值辅助决策'}
-                                                {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'strategy' && '完整分析框架：趋势→位置→信号→决策'}
-                                            </p>
-                                        </div>
-                                        {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'strategy' && (
-                                            <div className="flex items-center gap-2">
+                                {(() => {
+                                    const editType = allContestants.find(c => c.id === editingId)?.type;
+                                    if (editType === 'dca') return (
+                                        <>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-gray-500 uppercase">定投金额 (USDT)</label>
                                                 <input
-                                                    type="checkbox"
-                                                    id="includeDaily"
-                                                    checked={allContestants.find(c => c.id === editingId)?.settings.includeDaily || false}
+                                                    type="number"
+                                                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                    value={allContestants.find(c => c.id === editingId)?.settings.investAmount}
                                                     onChange={(e) => {
-                                                        const val = e.target.checked;
-                                                        setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, includeDaily: val } } : c));
+                                                        const val = parseFloat(e.target.value);
+                                                        setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, investAmount: val } } : c));
                                                     }}
-                                                    className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600"
                                                 />
-                                                <label htmlFor="includeDaily" className="text-xs text-gray-400">包含日线数据（更长Token）</label>
                                             </div>
-                                        )}
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-gray-500 uppercase">系统提示词 (可选)</label>
-                                            <textarea
-                                                className="w-full h-32 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none font-sans"
-                                                placeholder="输入自定义的交易策略描述（留空使用默认）..."
-                                                value={allContestants.find(c => c.id === editingId)?.settings.systemPrompt || ''}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, systemPrompt: val } } : c));
-                                                }}
-                                            />
-                                        </div>
-                                    </>
-                                )}
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-gray-500 uppercase">时间间隔 (分钟)</label>
+                                                <input
+                                                    type="number"
+                                                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                    value={allContestants.find(c => c.id === editingId)?.settings.intervalMinutes}
+                                                    onChange={(e) => {
+                                                        const val = parseInt(e.target.value);
+                                                        setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, intervalMinutes: val } } : c));
+                                                    }}
+                                                />
+                                                <p className="text-[10px] text-gray-500 italic">提示: 10080 分钟 = 1 周, 1440 分钟 = 1 天</p>
+                                            </div>
+                                        </>
+                                    );
+                                    if (editType === 'grid') return (
+                                        <>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">网格级数</label>
+                                                    <input type="number" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.gridLevels}
+                                                        onChange={(e) => { const val = parseInt(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, gridLevels: val } } : c)); }}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">枢轴点 N</label>
+                                                    <input type="number" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.pivotN}
+                                                        onChange={(e) => { const val = parseInt(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, pivotN: val } } : c)); }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-gray-500 uppercase">回看窗口 (天)</label>
+                                                <input type="number" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                    value={allContestants.find(c => c.id === editingId)?.settings.windowDays}
+                                                    onChange={(e) => { const val = parseInt(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, windowDays: val } } : c)); }}
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">波动率下限 (%)</label>
+                                                    <input type="number" step="0.5" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.volatilityMin}
+                                                        onChange={(e) => { const val = parseFloat(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, volatilityMin: val } } : c)); }}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">波动率上限 (%)</label>
+                                                    <input type="number" step="0.5" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.volatilityMax}
+                                                        onChange={(e) => { const val = parseFloat(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, volatilityMax: val } } : c)); }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">硬止损 (%)</label>
+                                                    <input type="number" step="0.5" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.stopLossPercent}
+                                                        onChange={(e) => { const val = parseFloat(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, stopLossPercent: val } } : c)); }}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">浮盈保护 (%)</label>
+                                                    <input type="number" step="0.5" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.takeProfitPercent}
+                                                        onChange={(e) => { const val = parseFloat(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, takeProfitPercent: val } } : c)); }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500 italic">策略说明：基于枢轴点识别支撑/阻力位，在低点买入、高点卖出，适合震荡行情</p>
+                                        </>
+                                    );
+                                    // LLM 类型
+                                    return (
+                                        <>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-gray-500 uppercase">情报等级</label>
+                                                <select
+                                                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                    value={allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel || 'lite'}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value as 'lite' | 'indicator' | 'strategy';
+                                                        setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, intelligenceLevel: val } } : c));
+                                                    }}
+                                                >
+                                                    <option value="lite">🟢 Lite - 基础价格数据 (最少Token)</option>
+                                                    <option value="indicator">🟡 Indicator - 含RSI/MA/MACD指标</option>
+                                                    <option value="strategy">🔴 Strategy - 多时间框架+策略建议</option>
+                                                </select>
+                                                <p className="text-[10px] text-gray-500">
+                                                    {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'lite' && '仅提供24h价格CSV，让LLM基于走势判断'}
+                                                    {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'indicator' && '提供RSI、均线、MACD数值辅助决策'}
+                                                    {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'strategy' && '完整分析框架：趋势→位置→信号→决策'}
+                                                </p>
+                                            </div>
+                                            {allContestants.find(c => c.id === editingId)?.settings.intelligenceLevel === 'strategy' && (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="includeDaily"
+                                                        checked={allContestants.find(c => c.id === editingId)?.settings.includeDaily || false}
+                                                        onChange={(e) => {
+                                                            const val = e.target.checked;
+                                                            setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, includeDaily: val } } : c));
+                                                        }}
+                                                        className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600"
+                                                    />
+                                                    <label htmlFor="includeDaily" className="text-xs text-gray-400">包含日线数据（更长Token）</label>
+                                                </div>
+                                            )}
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-gray-500 uppercase">系统提示词 (可选)</label>
+                                                <textarea
+                                                    className="w-full h-32 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none font-sans"
+                                                    placeholder="输入自定义的交易策略描述（留空使用默认）..."
+                                                    value={allContestants.find(c => c.id === editingId)?.settings.systemPrompt || ''}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, systemPrompt: val } } : c));
+                                                    }}
+                                                />
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                                 <button
                                     onClick={() => setEditingId(null)}
                                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg"
@@ -783,14 +851,17 @@ export default function ArenaPage() {
                                 const type = formData.get('type') as string;
                                 const newId = `custom-${Date.now()}`;
                                 const colors = ['#f59e0b', '#ec4899', '#06b6d4', '#84cc16'];
+                                const settingsMap: Record<string, any> = {
+                                    'llm-solo': { intelligenceLevel: 'indicator', systemPrompt: '' },
+                                    'dca': { investAmount: 500, intervalMinutes: 1440 },
+                                    'grid': { gridLevels: 3, pivotN: 3, windowDays: 7, volatilityMin: 3, volatilityMax: 5, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60 },
+                                };
                                 const newContestant = {
                                     id: newId,
                                     name,
                                     type,
                                     color: colors[allContestants.length % colors.length],
-                                    settings: type === 'llm-solo'
-                                        ? { intelligenceLevel: 'indicator', systemPrompt: '' }
-                                        : { investAmount: 500, intervalMinutes: 1440 }
+                                    settings: settingsMap[type] || { investAmount: 500, intervalMinutes: 1440 }
                                 };
                                 setAllContestants([...allContestants, newContestant]);
                                 setSelectedContestants([...selectedContestants, newId]);
@@ -805,6 +876,7 @@ export default function ArenaPage() {
                                     <label className="text-xs text-gray-500">策略类型</label>
                                     <select name="type" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2 text-sm focus:border-blue-500 outline-none">
                                         <option value="dca">定投 (DCA)</option>
+                                        <option value="grid">高抛低吸 (Grid)</option>
                                         <option value="llm-solo">LLM 单兵</option>
                                     </select>
                                 </div>

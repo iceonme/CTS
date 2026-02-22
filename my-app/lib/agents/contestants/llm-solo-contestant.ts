@@ -4,6 +4,7 @@ import { VirtualPortfolio } from '../../trading/portfolio';
 import { MarketDatabase } from '../../data/market-db';
 import { MiniMaxClient } from '../../core/minimax';
 import { calculateRSI, calculateSMA, calculateMACD } from '../../skills/tools/analysis-tools';
+import { to1h } from '../../trading/kline-aggregator';
 
 // ============================================
 // 情报等级配置类型定义
@@ -258,12 +259,9 @@ export class LLMSoloContestant implements Contestant {
 
     /** Lite: 24h K线 + 涨跌汇总 (原有行为) */
     private buildLitePrompt(allKlines: any[], state: any): string {
-        // 抽样为 1h
-        const macroKlines: any[] = [];
-        for (let i = allKlines.length - 1; i >= 0; i -= 60) {
-            macroKlines.unshift(allKlines[i]);
-            if (macroKlines.length >= 24) break;
-        }
+        // 聚合为 1h K线（真正的 OHLCV 聚合）
+        const sorted = [...allKlines].sort((a, b) => a.timestamp - b.timestamp);
+        const macroKlines = to1h(sorted).slice(-24);
 
         const firstPrice = allKlines[0].open;
         const lastPrice = allKlines[allKlines.length - 1].close;
@@ -305,12 +303,9 @@ USDT: ${Math.round(state.balance)}, ${this.symbol}: ${position.quantity.toFixed(
         const low24h = Math.min(...allKlines.map(k => k.low));
         const volume24h = allKlines.reduce((sum, k) => sum + k.volume, 0);
 
-        // 抽样24根小时线
-        const macroKlines: any[] = [];
-        for (let i = allKlines.length - 1; i >= 0; i -= 60) {
-            macroKlines.unshift(allKlines[i]);
-            if (macroKlines.length >= 24) break;
-        }
+        // 聚合为1小时K线（真正的 OHLCV 聚合）
+        const sorted = [...allKlines].sort((a, b) => a.timestamp - b.timestamp);
+        const macroKlines = to1h(sorted).slice(-24);
 
         // 计算当前指标
         const currentRSI = calculateRSI(prices, 14);
@@ -495,12 +490,9 @@ USDT: ${Math.round(state.balance)} | ${this.symbol}: ${position.quantity.toFixed
         const low24h = Math.min(...allKlines.map(k => k.low));
         const volume24h = allKlines.reduce((sum, k) => sum + k.volume, 0);
 
-        // 抽样24根小时线
-        const macroKlines: any[] = [];
-        for (let i = allKlines.length - 1; i >= 0; i -= 60) {
-            macroKlines.unshift(allKlines[i]);
-            if (macroKlines.length >= 24) break;
-        }
+        // 聚合为1小时K线（真正的 OHLCV 聚合）
+        const sorted = [...allKlines].sort((a, b) => a.timestamp - b.timestamp);
+        const macroKlines = to1h(sorted).slice(-24);
 
         // 计算当前指标
         const currentRSI = calculateRSI(prices, 14);
