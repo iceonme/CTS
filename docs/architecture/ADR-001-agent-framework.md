@@ -1,4 +1,4 @@
-# ADR-001: TradeMind Agent 框架设计
+# ADR-001: AAAgent (Autonomous Account Agent) 框架设计
 
 **日期**: 2026-02-17  
 **状态**: 已接受  
@@ -8,7 +8,7 @@
 
 ## 背景
 
-在 TradeMind AI 项目中，我们需要设计一个支持多智能体协作的框架。经过评估市面上的框架（Vercel AI SDK、Mastra、LangChain），发现它们都无法完美满足**数字资产交易**这一特殊场景的需求。
+我们需要设计一个支持动态多智能体协作且具备原生经济/账户模型的通用型 Agent 框架。TradeMind 是基于此框架在数字资产交易场景的首个参考实现。
 
 ---
 
@@ -28,48 +28,24 @@
 
 ---
 
-## 架构概览
+```mermaid
+graph TD
+    subgraph "L3: 经济信誉层 (Economic Layer)"
+        E1[激励机制] --- E2[信誉评估] --- E3[资源分配]
+    end
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    用户界面层                             │
-│    (与 PA 对话 / 与专业 Agent 对话 / 配置 / 查看数据)      │
-└─────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│  PA (Squad Leader) - 交易智能体小队队长                  │
-│  ═══════════════════════════════════                    │
-│  职责：通用对话入口、决策中枢、团队协调、战术指挥          │
-│                                                          │
-│  核心能力：                                               │
-│  ├── Bull/Bear 双视角推理（内心独白）                     │
-│  ├── 主动任务执行（盯盘/找机会/异动/报告）                │
-│  ├── Skill 编排与执行（动态发现和调用）                   │
-│  └── 其他 Agent 管理                                     │
-├─────────────────────────────────────────────────────────┤
-│  专业 Agent 网络（可选直接对话）                          │
-│  ├── 技术分析员 - 只能回答技术分析问题                   │
-│  ├── Polymarket 专员 - 只能回答预测市场问题              │
-│  └── 其他... 能力受限、自主性受限                        │
-└─────────────────────────────────────────────────────────┘
-                           │
-          ┌────────────────┼────────────────┐
-          │                │                │
-          ▼                ▼                ▼
-┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│  技术分析员  │   │ Polymarket │   │  自定义     │
-│  📊         │   │   专员 🎯   │   │  Agent     │
-└─────────────┘   └─────────────┘   └─────────────┘
-        │                │                │
-        └────────────────┼────────────────┘
-                         ▼
-              ┌─────────────────────┐
-              │     共享记忆层       │
-              │  ├─ 群体智慧         │
-              │  ├─ 市场共识         │
-              │  └─ 历史经验         │
-              └─────────────────────┘
+    subgraph "L2: 通信协作层 (Communication Layer)"
+        C1[Feed 总线] --- C2[War Room 讨论] --- C3[协作博弈]
+    end
+
+    subgraph "L1: 构建层 (Agent Construction Layer / 8 Modules)"
+        A1[感知 Sense] --- A2[思考 Think] --- A3[行动 Act]
+        A4[记忆 Memory] --- A5[自主 Autonomy] --- A6[自进化 Evolution]
+        A7[节点 Node] --- A8[渠道 Channel]
+    end
+
+    L3 ==> L2
+    L2 ==> L1
 ```
 
 ---
@@ -95,33 +71,30 @@ Layer 1: Tool（底层工具）
 
 ```typescript
 abstract class BaseAgent {
-  // 身份与个性
-  abstract identity: AgentIdentity;
-  abstract prompts: AgentPrompts;
-  
-  // 能力（依赖注入）
-  protected skills: Map<string, Skill>;
-  protected tools: Map<string, Tool>;
-  
-  // 记忆系统（三层）
-  readonly memory: {
-    shortTerm: SessionMemory;   // 会话级
-    longTerm: IndividualMemory; // Agent 个体级
-    collective: CollectiveMemory; // 群体共享
-  };
-  
-  // 自主性配置
-  autonomy: 'high' | 'medium' | 'low';
-  isPrimary: boolean;  // PA 标记
-  
-  // 核心方法
+  // 1. 物理属性 (Physicality)
+  abstract nodeId: string;        // 运行节点 (local/cloud)
+  abstract channels: Channel[];   // 消息渠道 (TG/Web/Discord)
+
+  // 2. 认知能力 (Intelligence)
+  // 感知：L1-L3 事实订阅
+  abstract sense(data: SenseData): Promise<void>; 
+  // 思考：思考 Spec (Reflection/Planning/CoT)
   abstract chat(message: string): Promise<string>;
+  // 行动：Skill 执行引擎
   executeSkill(skillId: string, params: any): Promise<any>;
-  executeWorkflow(workflow: Workflow): Promise<any>;
-  
-  // 钩子（子类可覆盖）
-  protected beforeSkillExecute(skillId: string, params: any): Promise<void>;
-  protected afterSkillExecute(skillId: string, result: any): Promise<void>;
+  // 自进化：Skill Factory 元能力
+  generateNewSkillSpec(req: string): Promise<SkillSpec>;
+
+  // 3. 核心底座 (Core State)
+  protected scheduler: Scheduler; // 基于 ADR-005
+  readonly memory: {
+    shortTerm: SessionMemory;
+    longTerm: IndividualMemory;
+    collective: CollectiveMemory;
+  };
+
+  // 4. 用户交互与多渠道触达 (Channel Interface)
+  async sendMessageToChannel(channel: string, msg: string): Promise<void>;
 }
 ```
 

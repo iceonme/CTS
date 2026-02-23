@@ -1,9 +1,7 @@
-# TradeMind - 产品愿景
+# TradeMind 战略白皮书 - 产品愿景 (Vision)
 
-> **让每个人都能拥有专业的 AI 交易团队**
-
-**版本**: v1.0  
-**最后更新**: 2026-02-18
+> **定位**: 核心使命、解决的问题与最终形态。  
+> **白皮书组成**: [Vision](./VISION.md) | [Roadmap](./ROADMAP.md) | [Insights](./insights/)
 
 ---
 

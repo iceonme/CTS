@@ -1,7 +1,24 @@
-# TradeMind 工作日志
+# TradeMind 项目记忆与上下文 (Context & Memory)
 
-> 增量更新：今天做了什么，接下来要做什么  
-> **最后更新**: 2026-02-21
+> **定位**: 交接细节、每日进展、短期记忆闭环。  
+> **白皮书**: [VISION](./VISION.md) | **看板**: [BOARD](./task/BOARD.md)
+
+---
+
+## ✅ 完成记录 (Log #20260223-1)
+
+> **时间**: 2026-02-23 16:55  
+> **内容**: 架构大整编与文档体系闭环
+
+### 项目管理与协作体系重构 (2026-02-23)
+- **确立“白皮书-看板-记忆”三级架构**:
+  - **战略白皮书**: 整合 VISION、ROADMAP 与 INSIGHTS (开启 INS-XXX 编号体系)。
+  - **战术看板**: 建立 [docs/task/BOARD.md](./task/BOARD.md)，替代原 `todo/` 目录。
+  - **人机协作 (VibeCoding)**: 确立“脑内运行文件 ➔ 物理看板同步 ➔ 执行报告归档”的文件驱动模式。
+- **架构蓝图升级**: 
+  - 将 Agent 构建层扩展为 **8 大核心模块**（感知、思考、行动、记忆、自主、进化、节点、渠道）。
+  - 详细定义见 [INS-002: Agent 构建层框架](./insights/INS-002-agent-construction-layer-framework.md)。
+- **物理实现策略**: 针对 Node 和 Channel 确立了“接口保留、初期固化本地实现”的务实路线。
 
 ---
 
@@ -138,19 +155,22 @@
 
 ## 📋 接下来要做 (W3 后续)
 
-### 紧急：真实 LLM 实战验证
-- [ ] **Scalper 实测**: 在 `/arena` 页面使用真实 API Key，1h 步长跑通短期回测，检验 Scalper Few-shot 优化效果。
-- [ ] **战报分析**: 对比 DCA vs Scalper 的夏普比率与最大回撤，评估步长与提示词改进带来的实际收益差异。
+## ⏭️ 接力点 (Next #20260223-1)
 
-### 重要：LLM 策略优化
-- [ ] **Strategy/Indicator 优化**: 根据 Scalper 实测结论，决定是否也引入 Few-shot 或分仓引导。
-- [ ] **对比基准**: Lite vs Indicator vs Strategy vs Scalper 同条件对比。
+> **交接时间**: 2026-02-23 17:00  
+> **当前上下文**: 已完成 `BaseAgent` 源代码侦察，确认了 AAAgent 品牌术语与 VibeCoding 文档体系的全面一致性。
 
-### 计划：基础设施
-- [ ] **2025 全年回测跑通**: 拿到全年度竞技场 Baseline 数据。
-- [x] **评估系统**: ~~计算夏普比率、最大回撤等进阶指标~~ ✅ 已完成。
-- [ ] **LLM 策略增强**: 引入 Few-shot 学习和决策反思逻辑。
-- [ ] **MAS 小队运转**: 技术分析员信号生成 + PA 决策 + 交易执行。
+### 1. 物理层接口定义 (Physical First)
+- [ ] 在 `my-app/lib/agents/types/` 定义 `INode` 与 `IChannel`。
+- [ ] 在 `my-app/lib/agents/physical/` 实现 `LocalNode.ts` 与 `ConsoleChannel.ts`。
+
+### 2. BaseAAAgent 骨架开发
+- [ ] 创建 `my-app/lib/agents/base-aa-agent.ts`，作为 AAAgent 的核心抽象类。
+- [ ] 整合 8 大模块生命周期（感知-思考-行动-状态循环）。
+- [ ] 基于 ADR-005 的时钟注入机制重新封装 `Scheduler`。
+
+### 3. 文档联动测试
+- [ ] 完成第一个文件变更后，生成 `walkthrough.md` 并归档，验证 VibeCoding Skill 是否执行到位。
 
 ### Future（非紧急）
 - [ ] **配置面板**: 选手自定义配置系统（已设计，待实现）

@@ -1,9 +1,7 @@
-# TradeMind 产品路线图
+# TradeMind 战略白皮书 - 路线图 (Roadmap)
 
-> 版本规划与需求文档
-
-**最后更新**: 2026-02-22  
-**关联**: [VISION.md](./VISION.md) | [HANDOVER.md](./HANDOVER.md)
+> **定位**: 长期里程碑、版本目标与演进逻辑。  
+> **白皮书组成**: [Vision](./VISION.md) | [Roadmap](./ROADMAP.md) | [Insights](./insights/)
 
 ---
 
