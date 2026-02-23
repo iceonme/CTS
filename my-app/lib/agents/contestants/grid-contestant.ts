@@ -4,7 +4,7 @@ import { VirtualPortfolio } from '../../trading/portfolio';
 import { MarketDatabase } from '../../data/market-db';
 import { getRecentPivots } from '../../trading/pivot-detector';
 import { analyzeVolatility, VolatilityResult } from '../../trading/volatility-calculator';
-import { to15m } from '../../trading/kline-aggregator';
+import { aggregateByInterval, INTERVAL_MINUTES } from '../../trading/kline-aggregator';
 
 /**
  * GridContestant 配置
@@ -15,11 +15,14 @@ export interface GridConfig {
     gridLevels: number;           // 买卖级数，默认 3
     pivotN: number;               // 枢轴点 N 值，默认 5
     windowDays: number;           // 回看窗口天数，默认 30
+    windowCount?: number;         // 回看窗口K线数量，可选
+    lookbackType?: 'days' | 'count'; // 回看模式，默认 'days'
     volatilityMin: number;        // 最低波动率 %，默认 3
     volatilityMax: number;        // 最高波动率 %，默认 5
     stopLossPercent: number;      // 硬止损百分比，默认 2
     takeProfitPercent: number;    // 浮盈保护百分比，默认 4
     recalcIntervalMinutes: number;// 重新计算枢轴点的最短间隔（分钟），默认 60
+    timeframe: string;            // K线周期，默认 '15m'
 }
 
 /**
@@ -72,11 +75,14 @@ export class GridContestant implements Contestant {
             gridLevels: config.gridLevels || 3,
             pivotN: config.pivotN || 3,
             windowDays: config.windowDays || 7,
+            windowCount: config.windowCount || 360,
+            lookbackType: config.lookbackType || 'days',
             volatilityMin: config.volatilityMin || 2,
             volatilityMax: config.volatilityMax || 50,
             stopLossPercent: config.stopLossPercent || 2,
             takeProfitPercent: config.takeProfitPercent || 4,
             recalcIntervalMinutes: config.recalcIntervalMinutes || 60,
+            timeframe: config.timeframe || '15m',
         };
 
         // 初始网格状态
@@ -114,18 +120,43 @@ export class GridContestant implements Contestant {
         const currentPrice = await this.getCurrentPrice(now);
         if (currentPrice === null) return;
 
+        // 0. 如果策略已暂停，仅更新持仓，不进行任何交易检查
+        if (this.gridState.paused) {
+            this.portfolio.updatePrice(this.config.symbol, currentPrice);
+            this.portfolio.takeSnapshot();
+            return;
+        }
+
         // 更新持仓估值
         this.portfolio.updatePrice(this.config.symbol, currentPrice);
 
         // 1. 检查是否需要重新计算枢轴点
-        // 只在以下情况重算，不定时重算（避免覆盖未触发的点位）
+        // 触发条件：1. 初始化 2. 所有买卖点触发 3. 超过重算间隔 4. 价格偏离网格中心过大
         const allBuyTriggered = this.gridState.buyTriggered.length > 0 && this.gridState.buyTriggered.every(t => t);
         const allSellTriggered = this.gridState.sellTriggered.length > 0 && this.gridState.sellTriggered.every(t => t);
         const needsInit = this.gridState.buyLevels.length === 0 && this.gridState.sellLevels.length === 0;
 
-        if (needsInit || allBuyTriggered || allSellTriggered) {
-            const reason = needsInit ? '初始化' : allBuyTriggered ? '所有买入点已触发' : '所有卖出点已触发';
-            this.log(`🔄 触发网格重算（${reason}）`);
+        const timeSinceLastCalc = (now - this.gridState.lastCalcTimestamp) / (60 * 1000);
+        const timerTriggered = timeSinceLastCalc >= this.config.recalcIntervalMinutes;
+
+        // 计算偏离度：如果价格跑出最高卖价或最低买价一定比例，说明网格失效
+        let deviationTriggered = false;
+        if (!needsInit) {
+            const minBuy = this.gridState.buyLevels[0];
+            const maxSell = this.gridState.sellLevels[this.gridState.sellLevels.length - 1];
+            if (currentPrice < minBuy * 0.98 || currentPrice > maxSell * 1.02) {
+                deviationTriggered = true;
+            }
+        }
+
+        if (needsInit || allBuyTriggered || allSellTriggered || timerTriggered || deviationTriggered) {
+            const reason = needsInit ? '初始化' :
+                allBuyTriggered ? '所有买入点已触发' :
+                    allSellTriggered ? '所有卖出点已触发' :
+                        timerTriggered ? `达到 ${this.config.recalcIntervalMinutes}m 重算间隔` :
+                            '价格偏离原网格过大';
+
+            this.log(`🔄 触发网格刷新（${reason}）`);
             await this.recalculateGrid(now);
         }
 
@@ -160,8 +191,20 @@ export class GridContestant implements Contestant {
      * 重新计算网格点位
      */
     private async recalculateGrid(now: number): Promise<void> {
-        const windowMs = this.config.windowDays * 24 * 60 * 60 * 1000;
-        const startTime = new Date(now - windowMs);
+        let startTime: Date;
+        let limit: number = 50000;
+
+        if (this.config.lookbackType === 'count' && this.config.windowCount) {
+            // 按K线数量回看。例如 timeframe='15m', windowCount=100 -> 回看 1500 分钟
+            const intervalMinutes = (INTERVAL_MINUTES as any)[this.config.timeframe] || 15;
+            const totalMinutes = this.config.windowCount * intervalMinutes;
+            startTime = new Date(now - totalMinutes * 60 * 1000);
+            limit = Math.max(limit, totalMinutes + 1000); // 留点余量
+        } else {
+            // 按天数回看
+            const windowMs = (this.config.windowDays || 7) * 24 * 60 * 60 * 1000;
+            startTime = new Date(now - windowMs);
+        }
 
         // 查询1分钟K线（数据库只存 1m 数据）
         const klines = await this.db.queryKlines({
@@ -169,7 +212,7 @@ export class GridContestant implements Contestant {
             interval: '1m',
             start: startTime,
             end: new Date(now),
-            limit: 50000, // 30天 × 1440根/天 = 43200 根，留余量
+            limit: limit,
         });
 
         if (klines.length < 2 * this.config.pivotN + 1) {
@@ -180,16 +223,17 @@ export class GridContestant implements Contestant {
         // queryKlines 返回降序数据，枢轴检测需要升序
         klines.sort((a, b) => a.timestamp - b.timestamp);
 
-        // 将1分钟K线聚合为15分钟K线，减少噪声
-        const klines15m = to15m(klines);
+        // 根据配置的周期进行聚合
+        const timeframe = (this.config.timeframe as any) || '15m';
+        const aggregatedKlines = aggregateByInterval(klines, timeframe);
 
-        if (klines15m.length < 2 * this.config.pivotN + 1) {
-            this.log(`⚠️ 聚合后K线数据不足（${klines15m.length} 根15m），无法计算枢轴点（原始1m: ${klines.length} 根）`);
+        if (aggregatedKlines.length < 2 * this.config.pivotN + 1) {
+            this.log(`⚠️ 聚合后K线数据不足（${aggregatedKlines.length} 根 ${timeframe}），无法计算枢轴点（原始1m: ${klines.length} 根）`);
             return;
         }
 
         // 计算波动率（仅记录，不暂停）
-        const volResult = analyzeVolatility(klines15m, this.config.volatilityMin, this.config.volatilityMax);
+        const volResult = analyzeVolatility(aggregatedKlines, this.config.volatilityMin, this.config.volatilityMax);
         this.gridState.volatility = volResult;
         this.gridState.paused = false;
 
@@ -197,11 +241,11 @@ export class GridContestant implements Contestant {
             this.log(`📊 波动率 ${volResult.volatility.toFixed(2)}% 超出理想范围 [${this.config.volatilityMin}%, ${this.config.volatilityMax}%]，但继续交易`);
         }
 
-        // 计算枢轴点
-        const pivots = getRecentPivots(klines15m, this.config.pivotN, this.config.gridLevels);
+        // 获取当前价格，用于点位计算和过滤
+        const currentPrice = aggregatedKlines[aggregatedKlines.length - 1].close;
 
-        // 获取当前价格，用于过滤无效点位
-        const currentPrice = klines15m[klines15m.length - 1].close;
+        // 计算枢轴点 - 传入当前价作为参考，优先取离当前价近的点
+        const pivots = getRecentPivots(aggregatedKlines, this.config.pivotN, this.config.gridLevels, currentPrice);
 
         // 过滤：买入点必须低于当前价
         let validBuyLevels = pivots.lows.filter(p => p < currentPrice * 0.999);
@@ -209,14 +253,15 @@ export class GridContestant implements Contestant {
         let validSellLevels = pivots.highs.filter(p => p > currentPrice * 1.001);
 
         // 合成补充：当有效点位不足 gridLevels 个时，自动生成
-        const levelSpacing = 0.015; // 每级间距 1.5%
+        const buySpacing = 0.015;  // 买入间距 1.5%
+        const sellSpacing = 0.025; // 卖出间距 2.5%（防卖飞，稍微扩宽点）
 
         while (validBuyLevels.length < this.config.gridLevels) {
             // 从最低的现有买入点往下生成，或从当前价往下
             const base = validBuyLevels.length > 0
                 ? validBuyLevels[0]  // 已升序，取最低的
-                : currentPrice * (1 - levelSpacing);
-            const newLevel = base * (1 - levelSpacing);
+                : currentPrice;      // 改正：起始基准应为当前价，否则会跳过第一级
+            const newLevel = base * (1 - buySpacing);
             validBuyLevels.unshift(newLevel); // 插入到开头（保持升序）
         }
 
@@ -224,8 +269,8 @@ export class GridContestant implements Contestant {
             // 从最高的现有卖出点往上生成，或从当前价往上
             const base = validSellLevels.length > 0
                 ? validSellLevels[validSellLevels.length - 1]  // 取最高的
-                : currentPrice * (1 + levelSpacing);
-            const newLevel = base * (1 + levelSpacing);
+                : currentPrice;      // 改正：起始基准应为当前价
+            const newLevel = base * (1 + sellSpacing);
             validSellLevels.push(newLevel); // 插入到末尾
         }
 
@@ -261,14 +306,15 @@ export class GridContestant implements Contestant {
                     continue;
                 }
 
-                // 动态计算买入金额：当前余额 / 总级数 (用户要求的算法)
-                const balance = this.portfolio.getOverview().balance;
+                // 递归分仓买入量：当前可用现金 / 总级数
+                const overview = this.portfolio.getOverview();
+                const balance = overview.balance;
                 const tradeAmount = balance / this.config.gridLevels;
 
                 if (tradeAmount < 10) {
                     // 余额太少，标记已触发避免重复报错
                     this.gridState.buyTriggered[i] = true;
-                    this.log(`⚠️ 买入 L${i + 1} 跳过（余额不足 $${balance.toFixed(0)}）`);
+                    this.log(`⚠️ 买入 L${i + 1} 跳过（余额不足 $${overview.balance.toFixed(0)}）`);
                     continue;
                 }
 
@@ -313,9 +359,8 @@ export class GridContestant implements Contestant {
                     continue;
                 }
 
-                // 动态计算卖出数量：当前持仓 / 剩余未触发的卖出点数
-                const remainingSells = this.gridState.sellTriggered.filter(t => !t).length;
-                const sellQty = totalQty / remainingSells;
+                // 递归分仓卖出量：当前持仓重量 / 总级数
+                const sellQty = totalQty / this.config.gridLevels;
                 const sellValue = sellQty * currentPrice;
 
                 const success = this.portfolio.executeTrade(
@@ -328,7 +373,7 @@ export class GridContestant implements Contestant {
 
                 if (success) {
                     this.gridState.sellTriggered[i] = true;
-                    this.log(`✅ 卖出 H${i + 1} | 价格: $${currentPrice.toFixed(0)} ≥ $${sellLevel.toFixed(0)} | 数量: ${sellQty.toFixed(4)} ($${sellValue.toFixed(0)}) (1/${remainingSells})`);
+                    this.log(`✅ 卖出 H${i + 1} | 价格: $${currentPrice.toFixed(0)} ≥ $${sellLevel.toFixed(0)} | 数量: ${sellQty.toFixed(4)} ($${sellValue.toFixed(0)}) (递归分仓: 1/${this.config.gridLevels})`);
                 } else {
                     this.log(`❌ 卖出 H${i + 1} 失败 | 价格: $${currentPrice.toFixed(0)}`);
                 }

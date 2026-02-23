@@ -25,7 +25,7 @@ export default function ArenaPage() {
         if (c.id === 'dca-bot') {
             return { ...c, type: 'dca', settings: { investAmount: 500, intervalMinutes: 10080 } }; // 7天
         } else if (c.id === 'grid-bot') {
-            return { ...c, type: 'grid', settings: { gridLevels: 3, pivotN: 3, windowDays: 7, volatilityMin: 2, volatilityMax: 50, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60 } };
+            return { ...c, type: 'grid', settings: { gridLevels: 3, pivotN: 3, windowDays: 7, windowCount: 360, lookbackType: 'days', volatilityMin: 2, volatilityMax: 50, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60, timeframe: '15m' } };
         } else if (c.id === 'mas-squad') {
             return { ...c, type: 'mas', settings: {} };
         } else if (c.id === 'llm-lite') {
@@ -53,8 +53,8 @@ export default function ArenaPage() {
     const [config, setConfig] = useState({
         symbol: 'BTCUSDT',
         start: '2025-01-01',
-        end: '2025-01-07',
-        stepMinutes: 720, // 默认12小时
+        end: '2025-02-01',
+        stepMinutes: 1, // 默认1分钟，方便短线调试
     });
     const [selectedContestants, setSelectedContestants] = useState<string[]>(['dca-bot', 'llm-lite', 'llm-indicator', 'llm-strategy', 'llm-scalper']);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -729,12 +729,59 @@ export default function ArenaPage() {
                                                     />
                                                 </div>
                                             </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">回看模式</label>
+                                                    <select
+                                                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.lookbackType || 'days'}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value as 'days' | 'count';
+                                                            setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, lookbackType: val } } : c));
+                                                        }}
+                                                    >
+                                                        <option value="days">按天数</option>
+                                                        <option value="count">按K线数</option>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-gray-500 uppercase">
+                                                        {allContestants.find(c => c.id === editingId)?.settings.lookbackType === 'count' ? '回看K线数' : '回看天数'}
+                                                    </label>
+                                                    <input type="number" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                        value={allContestants.find(c => c.id === editingId)?.settings.lookbackType === 'count'
+                                                            ? (allContestants.find(c => c.id === editingId)?.settings.windowCount || 360)
+                                                            : (allContestants.find(c => c.id === editingId)?.settings.windowDays || 7)
+                                                        }
+                                                        onChange={(e) => {
+                                                            const val = parseInt(e.target.value);
+                                                            const isCount = allContestants.find(c => c.id === editingId)?.settings.lookbackType === 'count';
+                                                            setAllContestants(prev => prev.map(c => c.id === editingId ? {
+                                                                ...c,
+                                                                settings: {
+                                                                    ...c.settings,
+                                                                    [isCount ? 'windowCount' : 'windowDays']: val
+                                                                }
+                                                            } : c));
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
                                             <div className="space-y-2">
-                                                <label className="text-xs text-gray-500 uppercase">回看窗口 (天)</label>
-                                                <input type="number" className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-                                                    value={allContestants.find(c => c.id === editingId)?.settings.windowDays}
-                                                    onChange={(e) => { const val = parseInt(e.target.value); setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, windowDays: val } } : c)); }}
-                                                />
+                                                <label className="text-xs text-gray-500 uppercase">K线周期 (Timeframe)</label>
+                                                <select
+                                                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                    value={allContestants.find(c => c.id === editingId)?.settings.timeframe || '15m'}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setAllContestants(prev => prev.map(c => c.id === editingId ? { ...c, settings: { ...c.settings, timeframe: val } } : c));
+                                                    }}
+                                                >
+                                                    <option value="1m">1m (超短线)</option>
+                                                    <option value="5m">5m (短线)</option>
+                                                    <option value="15m">15m (标准)</option>
+                                                    <option value="1h">1h (波段)</option>
+                                                </select>
                                             </div>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div className="space-y-2">
@@ -854,7 +901,7 @@ export default function ArenaPage() {
                                 const settingsMap: Record<string, any> = {
                                     'llm-solo': { intelligenceLevel: 'indicator', systemPrompt: '' },
                                     'dca': { investAmount: 500, intervalMinutes: 1440 },
-                                    'grid': { gridLevels: 3, pivotN: 3, windowDays: 7, volatilityMin: 3, volatilityMax: 5, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60 },
+                                    'grid': { gridLevels: 3, pivotN: 3, windowDays: 7, windowCount: 360, lookbackType: 'days', volatilityMin: 3, volatilityMax: 5, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60, timeframe: '15m' },
                                 };
                                 const newContestant = {
                                     id: newId,

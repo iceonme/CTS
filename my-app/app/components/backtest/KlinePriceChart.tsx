@@ -85,7 +85,7 @@ export default function KlinePriceChart({
     const progressLineDivRef = useRef<HTMLDivElement | null>(null);
     const markersRef = useRef<any>(null);
 
-    const [interval, setInterval_] = useState<'15m' | '1h' | '1d'>('15m');
+    const [interval, setInterval_] = useState<'1m' | '5m' | '15m' | '1h' | '1d'>('15m');
     const [allKlineData, setAllKlineData] = useState<KlineDataPoint[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -97,7 +97,7 @@ export default function KlinePriceChart({
             const endMs = new Date(endTime).getTime();
             const rangeDays = (endMs - startMs) / (24 * 60 * 60 * 1000);
             // 根据 interval 和日期范围动态计算所需条数
-            const intervalsPerDay: Record<string, number> = { '15m': 96, '1h': 24, '1d': 1 };
+            const intervalsPerDay: Record<string, number> = { '1m': 1440, '5m': 288, '15m': 96, '1h': 24, '1d': 1 };
             const neededBars = Math.ceil(rangeDays * (intervalsPerDay[klineInterval] || 24)) + 50;
             const limit = Math.min(neededBars, 50000);
             const url = `/api/market/klines?symbol=${symbol}&interval=${klineInterval}&start=${startMs}&end=${endMs}&limit=${limit}`;
@@ -105,6 +105,8 @@ export default function KlinePriceChart({
             const json = await res.json();
             if (json.success && json.data) {
                 setAllKlineData(json.data);
+                // 数据更新后，标记下一帧需要重新对焦（因为interval刷新了视野深度）
+                hasInitialFitRef.current = false;
             }
         } catch (err) {
             console.error('[KlinePriceChart] Failed to fetch kline data:', err);
@@ -115,7 +117,6 @@ export default function KlinePriceChart({
 
     // 初始加载 + interval 切换时重新加载
     useEffect(() => {
-        hasInitialFitRef.current = false;
         fetchKlineData(interval);
     }, [interval, fetchKlineData]);
 
@@ -137,6 +138,7 @@ export default function KlinePriceChart({
             timeScale: {
                 timeVisible: true,
                 borderColor: '#374151',
+                shiftVisibleRangeOnNewBar: false, // 防止新数据进场时视野自动移动
             },
             rightPriceScale: {
                 borderColor: '#374151',
@@ -237,13 +239,30 @@ export default function KlinePriceChart({
         } else if (progressLineDivRef.current) {
             progressLineDivRef.current.style.display = 'none';
         }
-
-        // 仅首次加载自动适配
-        if (!hasInitialFitRef.current && chartRef.current) {
-            chartRef.current.timeScale().fitContent();
-            hasInitialFitRef.current = true;
-        }
     }, [allKlineData, currentTimestamp, interval]);
+
+    // 独立控制初始对焦，避免受进度更新干扰
+    useEffect(() => {
+        // isLoading 为 true 时不执行，确保数据加载完成后再对焦
+        if (!chartRef.current || allKlineData.length === 0 || hasInitialFitRef.current || isLoading) return;
+
+        const timeScale = chartRef.current.timeScale();
+
+        // 确保在数据渲染且系列更新后执行
+        const timer = setTimeout(() => {
+            if (!chartRef.current || !hasInitialFitRef) return;
+
+            // 锁定在最开始的位置
+            timeScale.scrollToPosition(0, false);
+            timeScale.setVisibleLogicalRange({
+                from: 0,
+                to: Math.min(allKlineData.length, 150),
+            });
+            hasInitialFitRef.current = true;
+        }, 150);
+
+        return () => clearTimeout(timer);
+    }, [allKlineData, interval, isLoading]);
 
     // 添加买卖标记
     useEffect(() => {
@@ -298,7 +317,7 @@ export default function KlinePriceChart({
                     )}
                 </h2>
                 <div className="flex items-center gap-1">
-                    {(['15m', '1h', '1d'] as const).map(iv => (
+                    {(['1m', '5m', '15m', '1h', '1d'] as const).map(iv => (
                         <button
                             key={iv}
                             onClick={() => setInterval_(iv)}
@@ -307,7 +326,7 @@ export default function KlinePriceChart({
                                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
                                 }`}
                         >
-                            {iv === '15m' ? '15分钟' : iv === '1h' ? '1小时' : '日线'}
+                            {iv === '1m' ? '1m' : iv === '5m' ? '5m' : iv === '15m' ? '15m' : iv === '1h' ? '1h' : '1d'}
                         </button>
                     ))}
                 </div>
@@ -346,6 +365,8 @@ export default function KlinePriceChart({
 // 辅助函数
 function getIntervalMs(interval: string): number {
     switch (interval) {
+        case '1m': return 1 * 60 * 1000;
+        case '5m': return 5 * 60 * 1000;
         case '15m': return 15 * 60 * 1000;
         case '1h': return 60 * 60 * 1000;
         case '4h': return 4 * 60 * 60 * 1000;

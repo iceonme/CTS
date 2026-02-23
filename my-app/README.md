@@ -1,154 +1,102 @@
-# CryptoPulse AI MVP
+# TradeMind 核心应用 (my-app)
 
-AI-powered cryptocurrency market analysis platform with dual-perspective (Bull/Bear) reasoning.
+> **技术指南与开发者文档**
 
-## Features
+这是 TradeMind 的前端与后端服务核心，基于 Next.js 14 构建，集成了多智能体框架与高性能行情数据库。
 
-- 🤖 **CFO Agent** - Chief Financial Officer with Bull/Bear dual-reasoning engine
-- 📊 **Technical Analyst** - Automated RSI, MA, and trend analysis
-- 📈 **K-Line Charts** - TradingView Lightweight Charts with historical data
-- 💬 **Interactive Chat** - Ask the CFO about any supported cryptocurrency
-- 📡 **Real-time Feed** - Live market intelligence and alerts
-- 🎯 **WarRoom Dashboard** - Visual market overview and analysis
-- ⏰ **Watch Tasks** - Automated monitoring with configurable intervals
+---
 
-## Project Structure
+## 🛠️ 技术栈 (Tech Stack)
 
-```
-app/
-├── page.tsx              # CFO Console (main chat interface)
-├── feed/page.tsx         # Intelligence Feed
-├── warroom/page.tsx      # WarRoom Dashboard
-├── chart/page.tsx        # K-Line Chart with TradingView
-├── api/
-│   ├── market/route.ts   # CoinGecko API proxy
-│   ├── market/klines/route.ts  # K-line data API (DuckDB)
-│   └── analysis/route.ts # Analysis endpoints
-└── layout.tsx            # Root layout with navigation
+- **框架**: Next.js 14 (App Router) + TypeScript
+- **样式**: Tailwind CSS (Dark Mode Primary)
+- **行情数据库**: DuckDB (本地内存列式存储，适合时间序列查询)
+- **图表库**: TradingView Lightweight Charts v5
+- **外部数据源**: CoinGecko API (免费层级)
+- **智能体接口**: MiniMax API / OpenAI API
 
-lib/
-├── data/
-│   ├── coingecko.ts      # CoinGecko API client
-│   └── market-db.ts      # DuckDB market data client
-├── agents/
-│   ├── base.ts           # BaseAgent abstract class
-│   ├── tech-analyst.ts   # Technical Analyst Agent
-│   └── cfo.ts            # CFO Agent
-├── cfo/
-│   ├── reasoning.ts      # Bull/Bear reasoning engine
-│   └── tasks.ts          # Watch task scheduler
-└── types/
-    └── index.ts          # TypeScript type definitions
+---
 
-data/
-└── market-v2.db          # DuckDB database (BTCUSDT 1m K-lines, 2025 full year)
+## 📂 应用结构
 
-scripts/
-└── fetch-binance-data.ts # CLI tool to fetch historical K-lines
-```
-
-## Tech Stack
-
-- Next.js 14 + TypeScript
-- Tailwind CSS (dark theme)
-- CoinGecko API (free tier)
-- DuckDB (local market data storage)
-- TradingView Lightweight Charts v5
-- node-cron for scheduled tasks
-
-## Getting Started
-
-1. Install dependencies:
 ```bash
-npm install
+my-app/
+├── app/                      # 页面与路由
+│   ├── arena/                # 交易策略回测竞技场
+│   ├── warroom/              # 市场研判室 (CFO)
+│   ├── feed/                 # 智能情报流
+│   ├── chart/                # K线行情图表
+│   └── api/                  # API 端点总站
+├── lib/                      # 核心逻辑
+│   ├── agents/               # 智能体(Contestant) 具体实现
+│   ├── core/                 # 回测引擎、时钟、组合管理(Portfolio)
+│   ├── trading/              # 指标计算、信号识别、K线聚合
+│   └── data/                 # DuckDB 与 API 代理封装
+└── scripts/                  # 运维与同步脚本 (fetch-data, debug)
 ```
 
-2. Run the development server:
-```bash
-npm run dev
-```
+---
 
-3. Open [http://localhost:3000](http://localhost:3000)
+## 📡 API 核心接口
 
-## Usage
+| 路径 | 方法 | 说明 |
+|------|------|------|
+| `/api/market/klines` | `GET` | 获取 K 线数据（支持 symbol, interval, limit 参数） |
+| `/api/backtest/run` | `POST` | (Legacy) 运行回测任务 |
+| `/api/analysis` | `POST` | 与智能体（CFO 等）进行交互对话 |
+| `/api/market` | `GET` | 获取实时价格与市场概览（CoinGecko 代理） |
 
-### CFO Console
-- Ask about specific cryptocurrencies: "Analyze BTC"
-- Get market overview: "Market overview"
-- Quick analysis buttons for BTC, DOGE, ETH, SOL
+---
 
-### Feed
-- Real-time price alerts (>5% change)
-- CFO analysis signals
-- Auto-refresh every 30 seconds
-- Filter by type and importance
+## 📊 数据流水线 (Data Pipeline)
 
-### WarRoom
-- Market sentiment gauge
-- Asset-by-asset analysis cards
-- Bull vs Bear perspective comparison
-- Technical indicators detail view
+### 1. 历史数据存储
+- **路径**: `my-app/data/market-v2.db`
+- **内容**: 2025-01-01 至 2026-01-01 的 BTCUSDT 1分钟 K 线。
+- **记录数**: 525,601 条。
 
-### K-Line Charts (/chart)
-- **Timeframes**: 1m, 5m, 15m, 1h, 4h, 1d
-- **Auto-aggregation**: 1-minute data aggregated to higher timeframes
-- **Smart loading**: Different time ranges per timeframe to avoid browser lag
-- **Data**: BTCUSDT 2025 full year (525,601 1-minute candles)
-- **URL params**: `?interval=1h` to set default timeframe
+### 2. 动态聚合逻辑
+系统默认从 1 分钟精度读取，并在 API 层或客户端按需动态聚合为：
+- `1m`, `5m`, `15m` (短线)
+- `1h` (趋势)
+- `1d` (长线)
 
-## API Endpoints
+---
 
-- `GET /api/market?type=prices&symbols=bitcoin,dogecoin` - Get prices
-- `GET /api/market?type=overview` - Get market overview
-- `GET /api/market/klines?symbol=BTCUSDT&interval=1m` - Get K-line data
-- `GET /api/analysis?type=cfo&symbol=BTC` - Get CFO analysis
-- `GET /api/analysis?type=market-overview` - Get full market analysis
-- `POST /api/analysis` - Chat with CFO
+## 🏁 快速启动
 
-## Data Pipeline
+1. **环境准备**:
+   确保本地已安装 Node.js 18+ 和 npm。
 
-### Historical K-line Data
-- Source: Binance API
-- Symbol: BTCUSDT
-- Interval: 1 minute
-- Period: 2025-01-01 to 2026-01-01
-- Records: 525,601
-- Storage: Local DuckDB (~42MB)
+2. **安装依赖**:
+   ```bash
+   cd my-app
+   npm install
+   ```
 
-### Fetching New Data
-```bash
-npx ts-node scripts/fetch-binance-data.ts
-```
+3. **配置变量**:
+   在 `my-app` 目录下创建 `.env.local`:
+   ```env
+   MINIMAX_API_KEY=your_key_here
+   ```
 
-## Key Design Decisions
+4. **运行开发服务器**:
+   ```bash
+   npm run dev
+   ```
 
-1. **Dual-Reasoning Engine**: CFO analyzes both Bull and Bear cases before making recommendations
-2. **BaseAgent Pattern**: All agents extend BaseAgent for consistent interface
-3. **Request Queue**: CoinGecko API calls are queued to respect rate limits (50/min)
-4. **Client-Side Fetching**: Real-time data fetched from browser to avoid SSR API limits
-5. **DuckDB Integration**: Local columnar database for efficient time-series queries
-6. **Dynamic Aggregation**: Higher timeframes computed on-the-fly from 1-minute base data
+---
 
-## Notes
+## ⚠️ 开发者注意事项
 
-- CoinGecko free tier has a 50 calls/minute limit
-- Technical indicators calculated on 14-day historical data
-- RSI period: 14, MA periods: 7, 14, 30
-- Watch tasks run at 5-minute and 15-minute intervals
-- K-line data auto-loads based on timeframe (1m: 7 days, 5m: 30 days, 1h/1d: 365 days)
+1. **DuckDB 连接单例**:
+   由于 DuckDB 在热更新(HMR)时可能出现连接锁定，系统已在 `globalThis` 中实现了连接池单例化。如遇锁定错误，请重启开发服务器。
+2. **API 频率限制**:
+   CoinGecko 免费版限制为 30 次/分钟。系统已实现请求队列缓冲，但频繁刷页面仍可能触发 429。
+3. **K 线对焦机制**:
+   `KlinePriceChart` 组件包含复杂的初始对焦逻辑。修改 `useEffect` 时请注意不要破坏 `scrollToPosition(0)` 的首次锁定特性。
 
-## Development Log
+---
 
-### 2026-02-20 (Today)
-- ✅ 修复竞技场图表实时渲染问题，确保大步长回测图表同步更新
-- ✅ 修复净值计算静态 Bug，实现全局资产定时重估，解决“死线”问题
-- ✅ 优化 MiniMax Token 消耗：切换 `MiniMax-Text-01` 模型 + 引入极简 CSV 数据格式
-- ✅ 修复 LLM 数据源缺失问题：实现 1m 原始数据手动聚合为 1h 采样线
-- ✅ 增强 MiniMax 客户端鲁棒性，增加防御性校验与详细调试日志
-
-## Future Roadmap
-
-- 🛠 **增强 AI 决策能力**：为 LLM 提示词引入 MA、RSI、MACD 等技术指标
-- 🔍 **多时区视野分析**：整合日线与小时线数据，提升模型对宏观趋势的把握
-- 🧠 **推理框架优化**：重构 System Prompt，引导模型采用结构化思维链分析
-- ⚖️ **交易精度验证**：优化 `VirtualPortfolio` 大额订单执行精度及手续费处理
+**由 TradeMind 构建**
+*Focus on Execution, Powered by Intelligence*

@@ -2,135 +2,91 @@
 
 > **让每个人都能拥有专业的 AI 交易团队**
 
-TradeMind 是一个多智能体（MAS）交易助手系统，通过 AI 组成的虚拟交易团队，帮助个人投资者 7x24 小时盯盘、分析、执行交易。
+TradeMind 是一个多智能体（MAS）交易助手系统。通过 AI 组成的虚拟交易团队，帮助个人投资者实现 7x24 小时自动盯盘、市场研判与策略执行。
 
 ---
 
-## 🚀 快速开始
+## 🚀 快速导航
+
+### 核心页面
+- [竞技场 (/arena)](http://localhost:3000/arena) - 多选手回测与策略对比
+- [情报流 (/feed)](http://localhost:3000/feed) - 实时市场情报与 Agent 预警
+- [作战室 (/warroom)](http://localhost:3000/warroom) - 市场情绪仪表盘与多维度分析
+- [K线图表 (/chart)](http://localhost:3000/chart) - 深度集成行情系统
 
 ### 项目文档
-
 | 文档 | 说明 |
 |------|------|
-| [docs/VISION.md](./docs/VISION.md) | 产品大愿景 - 我们要解决什么问题，最终要成为什么 |
-| [docs/ROADMAP.md](./docs/ROADMAP.md) | 版本路线图 - 每个阶段要做什么（当前：v0.1 挑战赛）|
-| [docs/HANDOVER.md](./docs/HANDOVER.md) | 工作日志 - 今天做了什么，接下来做什么 |
-| [docs/architecture/](./docs/architecture/) | 技术架构设计文档 |
-
-### 新成员 onboarding
-
-1. 阅读 [VISION.md](./docs/VISION.md) - 理解产品愿景
-2. 阅读 [ROADMAP.md](./docs/ROADMAP.md) - 了解当前版本需求
-3. 阅读 [HANDOVER.md](./docs/HANDOVER.md) - 了解最近进展
-4. 阅读相关 [architecture/](./docs/architecture/) - 理解技术设计
+| [VISION.md](./docs/VISION.md) | **产品愿景** - 解决什么问题，最终形态 |
+| [ROADMAP.md](./docs/ROADMAP.md) | **路线图** - 阶段目标（当前：v0.1 挑战赛） |
+| [HANDOVER.md](./docs/HANDOVER.md) | **工作日志** - 增量开发记录 |
+| [architecture/](./docs/architecture/) | **技术设计** - 框架、算法与 ADR 记录 |
+| [insights/](./docs/insights/) | **深度洞察** - 策略训练、进化机制等研究 |
+| [arena-history/](./docs/arena-history/) | **回测存档** - 历史回测数据与战报记录 |
 
 ---
 
-## 📚 文档体系
+## 🏗️ 目录结构 (Naming Conventions)
 
-所有文档统一放在 `docs/` 目录下：
-
-```
-docs/
-├── VISION.md                 # 产品大愿景（长期稳定）
-├── ROADMAP.md                # 版本路线图（规划时更新）
-├── HANDOVER.md               # 工作日志（每日更新）
-├── architecture/             # 技术架构设计
-│   ├── ADR-001-agent-framework.md
-│   ├── ADR-002-prediction-feedback-loop.md
-│   └── quantitative-indicators-guide.md
-└── product/                  # 产品详细（历史参考）
-    └── product_vision.md
-```
-
-### 归档文档
-
-| 文档 | 说明 | 状态 |
-|------|------|------|
-| [archive/](./docs/archive/) | 历史文档（product_vision, implementation_plan, mvp_functional, system_design）| ⚠️ 过时 |
-
----
-
-## 🏗️ 项目结构
-
-```
-CTS/
-├── README.md                 # 本文档（项目入口）
-├── docs/                     # 文档目录
-│   ├── VISION.md             # 产品愿景
-│   ├── ROADMAP.md            # 版本路线图
-│   ├── HANDOVER.md           # 工作日志
-│   ├── architecture/         # 技术架构
-│   └── product/              # 产品详细（历史参考）
-├── my-app/                   # 代码目录（Next.js）
-│   ├── app/                  # 页面
-│   ├── lib/                  # 核心代码
-│   │   ├── agents/           # Agent 实现
-│   │   ├── core/             # 框架核心
-│   │   ├── skills/           # Skills
-│   │   └── data/             # 数据层
-│   └── data/                 # 数据文件
-│       └── market-v2.db      # 2025全年行情数据
-└── .agents/                  # Agent 配置
-```
-
----
-
-## 🛠️ 开发环境
+项目遵循统一的模块化命名规范：
 
 ```bash
-# 1. 进入项目
-cd my-app
-
-# 2. 安装依赖
-npm install
-
-# 3. 启动开发
-npm run dev
-
-# 4. 访问
-# http://localhost:3000 - 主应用
-# http://localhost:3000/chart - 图表页面
+CTS/
+├── README.md                 # 项目门户（本文档）
+├── docs/                     # 统一文档中心 (Documentation Center)
+│   ├── architecture/         # 技术架构设计 (ADR, 技术指南)
+│   ├── insights/             # 研究洞察 (AI 训练、模型进化)
+│   ├── arena-history/        # 竞技场记录 (回测存档、比赛战报)
+│   ├── VISION.md             # 产品愿景与最终形态
+│   ├── ROADMAP.md            # 路线图与阶段目标
+│   └── HANDOVER.md           # 开发进度与工作日志
+├── my-app/                   # 核心应用代码 (Next.js Application)
+│   └── README.md             # 技术/开发者指南（配置、API、部署）
+└── .agents/                  # Agent 配置与工具集成
 ```
+
+---
+
+## 🛠️ 模块概览
+
+1. **竞技场 (Arena)**: 允许 MAS 小队、LLM 单兵与基准策略（如 DCA）在相同历史数据下进行公平竞技。
+2. **多智能体框架 (MAS Framework)**:
+   - **PA (Portfolio Agent)**: 决策中枢，管理仓位与工具调用。
+   - **技术分析员 (Tech Analyst)**: 信号发生器，提供 RSI/MACD 等量化支撑。
+   - **CFO**: 提供宏观研判与牛熊对冲逻辑。
+3. **策略工具箱**:
+   - **Grid (网格策略)**: 负责震荡行情中的高抛低吸。
+   - **DCA (定投策略)**: 负责长期价值积攒。
+4. **数据引擎 (Data Engine)**:
+   - 包含 2025 全年 BTC 1分钟数据。
+   - 支持多级聚合（1m -> 15m/1h/1d）。
 
 ---
 
 ## 📊 当前状态
 
-**v0.1 挑战赛版本 - 进行中**
+**当前里程碑: v0.1 挑战赛 (In Progress)**
 
-构建交易挑战赛平台，让 MAS 小队 vs 人类基准 vs LLM 单兵在相同历史数据上竞技。
+- [x] **基础设施**: 2025 全年行情、高性能 K 线、虚拟时钟回放。
+- [x] **选手优化**: Grid 策略深度优化（动态跟随、递归分仓）。
+- [x] **图表增强**: 初始对焦锁定、全周期切换、回归问题修复。
+- [ ] **PA 工具化**: 正在将 Grid/DCA 封装为 PA 可调用的原子工具。
+- [ ] **评估系统**: 已实现夏普比率、最大回撤计算。
 
-### 已完成 ✅
-- 2025 全年 BTC 1分钟数据（50万+条）
-- 数据回放引擎 ReplayEngine
-- TradeMind Agent 框架（BaseAgent、记忆系统、FeedBus）
-
-### 进行中 🚧
-- 参赛者系统（DCA、MAS、LLM）
-- MAS 小队盯盘→研判→交易流程
-- 评估与可视化
-
-详见 [docs/HANDOVER.md](./docs/HANDOVER.md)
+详见 [docs/ROADMAP.md](./docs/ROADMAP.md)
 
 ---
 
-## 🔄 文档更新规则
+## 🔄 同步与规范
 
-| 场景 | 更新文档 |
-|------|----------|
-| 每天工作记录 | **HANDOVER.md** |
-| 需求/版本调整 | **ROADMAP.md** |
-| 产品方向变化 | **VISION.md** |
-| 技术架构变更 | **architecture/ADR-XXX.md** |
-
----
-
-## 🤝 贡献
-
-参见 [docs/HANDOVER.md](./docs/HANDOVER.md) 了解当前任务和下一步工作。
+1. **命名规范**:
+   - 统一使用 **TradeMind** 作为项目正式名称。
+   - 核心术语：**智能体 (Agent)**、**竞技场 (Arena)**、**回测 (Backtest)**、**回看 (Lookback)**。
+2. **文档更新**:
+   - 每日进展记录在 `docs/HANDOVER.md`。
+   - 架构重大变更记录在 `docs/arch/ADR-XXX.md`。
 
 ---
 
-**TradeMind 团队**  
-*让 AI 成为你的交易伙伴*
+**TradeMind 团队**
+*AI-First Cryptocurrency Trading MAS Framework*
