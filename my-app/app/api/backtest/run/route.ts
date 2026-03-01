@@ -5,6 +5,7 @@ import { DCAContestant } from '@/lib/agents/contestants/dca-contestant';
 import { MASContestant } from '@/lib/agents/contestants/mas-contestant';
 import { LLMSoloContestant } from '@/lib/agents/contestants/llm-solo-contestant';
 import { GridContestant } from '@/lib/agents/contestants/grid-contestant';
+import { GridRSIContestant } from '@/lib/agents/contestants/grid-rsi-contestant';
 import { MiniMaxClient } from '@/lib/core/minimax';
 
 export async function POST(req: NextRequest) {
@@ -81,6 +82,33 @@ export async function POST(req: NextRequest) {
                 );
                 controller.addContestant(gridBot);
                 console.log(`[Backtest API] Added Grid contestant: ${gridBot.name}`);
+            }
+
+            // 3b. GridRSI 选手（RSI 动态调仓系数）
+            if (contestantId === 'grid-rsi-bot' || (typeof conf === 'object' && conf.type === 'grid-rsi')) {
+                const gridRsiBot = new GridRSIContestant(
+                    typeof conf === 'string' ? 'grid-rsi-bot' : conf.id,
+                    typeof conf === 'string' ? 'Grid RSI 4.0 Jeff Huang' : (conf.name || 'Grid RSI 4.0 Jeff Huang'),
+                    db,
+                    {
+                        symbol,
+                        gridLevels:            settings.gridLevels            || 3,
+                        pivotN:                settings.pivotN                || 3,
+                        windowDays:            settings.windowDays            || 7,
+                        volatilityMin:         settings.volatilityMin         || 2,
+                        volatilityMax:         settings.volatilityMax         || 50,
+                        stopLossPercent:       settings.stopLossPercent       || 2,
+                        takeProfitPercent:     settings.takeProfitPercent     || 4,
+                        recalcIntervalMinutes: settings.recalcIntervalMinutes || 60,
+                        rsiPeriod:             settings.rsiPeriod             || 14,
+                        rsiOversold:           settings.rsiOversold           || 35,
+                        rsiOverbought:         settings.rsiOverbought         || 65,
+                        rsiMaxMultiplier:      settings.rsiMaxMultiplier      || 1.5,
+                        rsiMinMultiplier:      settings.rsiMinMultiplier      || 0.5,
+                    }
+                );
+                controller.addContestant(gridRsiBot);
+                console.log(`[Backtest API] Added GridRSI contestant: ${gridRsiBot.name}`);
             }
 
             // 4. LLM 单兵 (支持多种ID格式：llm-solo, llm-lite, llm-indicator, llm-strategy)

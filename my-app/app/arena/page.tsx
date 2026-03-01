@@ -8,6 +8,7 @@ import { DEFAULT_LLM_SYSTEM_PROMPT } from '@/lib/agents/contestants/llm-solo-con
 const CONTESTANTS_METADATA = [
     { id: 'dca-bot', name: '基准定投 (DCA)', color: '#3b82f6' }, // Blue
     { id: 'grid-bot', name: '高抛低吸 (Grid)', color: '#14b8a6' }, // Teal
+    { id: 'grid-rsi-bot', name: 'Grid RSI 4.0 Jeff Huang', color: '#f97316' }, // Orange
     { id: 'mas-squad', name: 'MAS 协作小队', color: '#10b981' }, // Emerald
     { id: 'llm-lite', name: 'LLM-Lite', color: '#a855f7' }, // Purple
     { id: 'llm-indicator', name: 'LLM-Indicator', color: '#ec4899' }, // Pink
@@ -26,6 +27,8 @@ export default function ArenaPage() {
             return { ...c, type: 'dca', settings: { investAmount: 500, intervalMinutes: 10080 } }; // 7天
         } else if (c.id === 'grid-bot') {
             return { ...c, type: 'grid', settings: { gridLevels: 3, pivotN: 3, windowDays: 7, windowCount: 360, lookbackType: 'days', volatilityMin: 2, volatilityMax: 50, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60, timeframe: '15m' } };
+        } else if (c.id === 'grid-rsi-bot') {
+            return { ...c, type: 'grid-rsi', settings: { gridLevels: 3, pivotN: 3, windowDays: 7, windowCount: 360, lookbackType: 'days', volatilityMin: 2, volatilityMax: 50, stopLossPercent: 2, takeProfitPercent: 4, recalcIntervalMinutes: 60, timeframe: '15m', rsiPeriod: 14, rsiOversold: 35, rsiOverbought: 65, rsiMaxMultiplier: 1.5, rsiMinMultiplier: 0.5 } };
         } else if (c.id === 'mas-squad') {
             return { ...c, type: 'mas', settings: {} };
         } else if (c.id === 'llm-lite') {
